@@ -1,5 +1,7 @@
 mod disasm;
+mod emu;
 
 fn main() {
-    println!("Hello, world!");
+    let mut emu = emu::Emulator::new();
+    emu.step();
 }
