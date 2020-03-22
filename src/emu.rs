@@ -1,4 +1,6 @@
-use super::disasm::{next_insn, AccessSize, Instruction, Opcode, Operand, RegisterMode, REG_PC};
+use super::disasm::{
+    next_insn, AccessSize, Instruction, Opcode, Operand, RegisterMode, REG_PC, REG_SR,
+};
 use std::convert::TryInto;
 use std::ops::{Index, IndexMut};
 
@@ -68,6 +70,12 @@ impl Memory {
     }
 }
 
+pub const STATUS_BIT_C: u16 = 0;
+pub const STATUS_BIT_Z: u16 = 1;
+pub const STATUS_BIT_N: u16 = 2;
+// TODO: is this really what microcorruption is using?
+pub const STATUS_BIT_V: u16 = 8;
+
 pub struct Registers {
     regs: [u16; 16],
 }
@@ -79,6 +87,66 @@ impl Registers {
 
     pub fn pc(&self) -> u16 {
         self[REG_PC]
+    }
+
+    fn get_status_bit(&self, bit: u16) -> bool {
+        (self[REG_SR] & (1 << bit)) != 0
+    }
+
+    pub fn status_c(&self) -> bool {
+        self.get_status_bit(STATUS_BIT_C)
+    }
+
+    pub fn status_z(&self) -> bool {
+        self.get_status_bit(STATUS_BIT_Z)
+    }
+
+    pub fn status_n(&self) -> bool {
+        self.get_status_bit(STATUS_BIT_N)
+    }
+
+    pub fn status_v(&self) -> bool {
+        self.get_status_bit(STATUS_BIT_V)
+    }
+
+    /// Used for calculating status bits
+    fn is_negative(size: AccessSize, value: u16) -> bool {
+        match size {
+            AccessSize::Byte => (value & 0x80) != 0,
+            AccessSize::Word => (value & 0x8000) != 0,
+        }
+    }
+
+    /// `result` is the result of the instruction, the value stored in the destination
+    /// when any is stored.
+    pub fn set_status_bits(&mut self, size: AccessSize, result: u16, c: bool, v: bool) {
+        let z = result == 0;
+        let n = Self::is_negative(size, result);
+        let mut sr = self[REG_SR];
+        sr &= !(STATUS_BIT_C | STATUS_BIT_Z | STATUS_BIT_N | STATUS_BIT_V);
+        sr |= (c as u16) << STATUS_BIT_C;
+        sr |= (z as u16) << STATUS_BIT_Z;
+        sr |= (n as u16) << STATUS_BIT_N;
+        sr |= (v as u16) << STATUS_BIT_V;
+        self[REG_SR] = sr;
+    }
+
+    /// Calculate status V bit for add operations.
+    /// See http://www.ti.com/lit/ug/slau144j/slau144j.pdf table 3-1
+    pub fn calc_add_overflow(size: AccessSize, a: u16, b: u16, result: u16) -> bool {
+        let a_is_neg = Self::is_negative(size, a);
+        let b_is_neg = Self::is_negative(size, b);
+        let res_is_neg = Self::is_negative(size, result);
+        a_is_neg == b_is_neg && a_is_neg != res_is_neg
+    }
+
+    /// Calculate status V bit for subtraction operations.
+    /// See http://www.ti.com/lit/ug/slau144j/slau144j.pdf table 3-1
+    pub fn calc_sub_overflow(size: AccessSize, a: u16, b: u16, result: u16) -> bool {
+        let a_is_neg = Self::is_negative(size, a);
+        let b_is_neg = Self::is_negative(size, b);
+        let res_is_neg = Self::is_negative(size, result);
+        a_is_neg != b_is_neg && b_is_neg == res_is_neg
     }
 }
 
@@ -194,6 +262,9 @@ impl Emulator {
                     AccessSize::Word,
                     (value >> 8) | (value << 8),
                 );
+
+                self.regs
+                    .set_status_bits(AccessSize::Word, value, value != 0, false);
             }
 
             Rra(size) => todo!(),
@@ -203,7 +274,11 @@ impl Emulator {
                 if (value & 0x80) != 0 {
                     value |= 0xff00;
                 }
+
                 self.write_operand(&insn.operands[0], AccessSize::Word, value);
+
+                self.regs
+                    .set_status_bits(AccessSize::Word, value, value != 0, false);
             }
 
             Push(size) => todo!(),
@@ -221,29 +296,39 @@ impl Emulator {
 
             Mov(size) | Add(size) | Addc(size) | Subc(size) | Sub(size) | Cmp(size)
             | Dadd(size) | Bit(size) | Bic(size) | Bis(size) | Xor(size) | And(size) => {
-                let mut value = self.read_operand(&insn.operands[0], size);
+                let opnd1 = self.read_operand(&insn.operands[0], size);
+                let mut value = opnd1;
 
                 match insn.opcode {
                     Mov(_size) => {}
 
-                    Add(size) => {
-                        value = self
-                            .read_operand(&insn.operands[1], size)
-                            .wrapping_add(value);
-                    }
+                    Add(size) | Addc(size) | Sub(size) | Cmp(size) | Subc(size) => {
+                        let opnd2 = self.read_operand(&insn.operands[1], size);
 
-                    Addc(size) => {
-                        todo!();
-                    }
+                        let mut final_opnd2 = opnd2;
+                        if matches!(insn.opcode, Sub(_) | Cmp(_) | Subc(_)) {
+                            final_opnd2 = !final_opnd2;
+                        }
 
-                    Subc(size) => {
-                        todo!();
-                    }
+                        if matches!(insn.opcode, Sub(_)) {
+                            final_opnd2 = final_opnd2.wrapping_add(1);
+                        } else if matches!(insn.opcode, Addc(_) | Subc(_)) {
+                            final_opnd2 = final_opnd2.wrapping_add(self.regs.status_c().into());
+                        }
 
-                    Sub(size) | Cmp(size) => {
-                        value = self
-                            .read_operand(&insn.operands[1], size)
-                            .wrapping_sub(value);
+                        let value32 = u32::from(final_opnd2).wrapping_add(value.into());
+                        value = value32 as u16;
+
+                        self.regs.set_status_bits(
+                            size,
+                            value,
+                            value32 > 0xffff,
+                            if matches!(insn.opcode, Add(_) | Addc(_)) {
+                                Registers::calc_add_overflow(size, opnd1, opnd2, value)
+                            } else {
+                                Registers::calc_sub_overflow(size, opnd1, opnd2, value)
+                            },
+                        )
                     }
 
                     Dadd(size) => {
@@ -252,6 +337,8 @@ impl Emulator {
 
                     Bit(size) | And(size) => {
                         value &= self.read_operand(&insn.operands[1], size);
+
+                        self.regs.set_status_bits(size, value, value != 0, false);
                     }
 
                     Bic(size) => {
@@ -263,13 +350,20 @@ impl Emulator {
                     }
 
                     Xor(size) => {
-                        value = self.read_operand(&insn.operands[1], size) ^ value;
+                        let opnd2 = self.read_operand(&insn.operands[1], size);
+                        value = opnd2 ^ value;
+
+                        self.regs.set_status_bits(
+                            size,
+                            value,
+                            value != 0,
+                            Registers::is_negative(size, opnd1)
+                                && Registers::is_negative(size, opnd2),
+                        );
                     }
 
                     _ => unreachable!(),
                 }
-
-                // TODO: flags
 
                 if !matches!(insn.opcode, Cmp(_size) | Bit(_size)) {
                     self.write_operand(&insn.operands[1], size, value);
