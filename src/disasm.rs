@@ -161,52 +161,50 @@ impl Operand {
     where
         F: FnMut() -> Option<u16>,
     {
-        if is_src {
-            match (reg, mode) {
-                (REG_PC, AddressingMode::Indexed) => {
-                    // Relative to PC, but PC is known, convert to absolute
-                    return Ok((
-                        Operand::Absolute(addr.wrapping_add(next_word().ok_or(Error::Eof)?)),
-                        2,
-                    ));
-                }
-
-                (REG_PC, AddressingMode::IndirectAutoincrement) => {
-                    // Autoincrement PC = get next word
-                    return Ok((Operand::Immediate(next_word().ok_or(Error::Eof)?), 2));
-                }
-
-                (REG_SR, AddressingMode::Indexed) => {
-                    // Pretend SR is 0
-                    return Ok((Operand::Absolute(next_word().ok_or(Error::Eof)?), 2));
-                }
-
-                (REG_SR, AddressingMode::Indirect) => {
-                    return Ok((Operand::Immediate(4), 0));
-                }
-
-                (REG_SR, AddressingMode::IndirectAutoincrement) => {
-                    return Ok((Operand::Immediate(8), 0));
-                }
-
-                (REG_CG, AddressingMode::Direct) => {
-                    return Ok((Operand::Immediate(0), 0));
-                }
-
-                (REG_CG, AddressingMode::Indexed) => {
-                    return Ok((Operand::Immediate(1), 0));
-                }
-
-                (REG_CG, AddressingMode::Indirect) => {
-                    return Ok((Operand::Immediate(2), 0));
-                }
-
-                (REG_CG, AddressingMode::IndirectAutoincrement) => {
-                    return Ok((Operand::Immediate(0xffff), 0));
-                }
-
-                _ => {}
+        match (reg, mode, is_src) {
+            (REG_PC, AddressingMode::Indexed, _) => {
+                // Symbolic mode. Relative to PC, but PC is known, convert to absolute.
+                return Ok((
+                    Operand::Absolute(addr.wrapping_add(next_word().ok_or(Error::Eof)?)),
+                    2,
+                ));
             }
+
+            (REG_PC, AddressingMode::IndirectAutoincrement, _) => {
+                // Immediate mode. Autoincrement PC = get next word
+                return Ok((Operand::Immediate(next_word().ok_or(Error::Eof)?), 2));
+            }
+
+            (REG_SR, AddressingMode::Indexed, _) => {
+                // Absolute mode. Pretend SR is 0
+                return Ok((Operand::Absolute(next_word().ok_or(Error::Eof)?), 2));
+            }
+
+            (REG_SR, AddressingMode::Indirect, true) => {
+                return Ok((Operand::Immediate(4), 0));
+            }
+
+            (REG_SR, AddressingMode::IndirectAutoincrement, true) => {
+                return Ok((Operand::Immediate(8), 0));
+            }
+
+            (REG_CG, AddressingMode::Direct, true) => {
+                return Ok((Operand::Immediate(0), 0));
+            }
+
+            (REG_CG, AddressingMode::Indexed, true) => {
+                return Ok((Operand::Immediate(1), 0));
+            }
+
+            (REG_CG, AddressingMode::Indirect, true) => {
+                return Ok((Operand::Immediate(2), 0));
+            }
+
+            (REG_CG, AddressingMode::IndirectAutoincrement, true) => {
+                return Ok((Operand::Immediate(0xffff), 0));
+            }
+
+            _ => {}
         }
 
         Ok(match mode {
