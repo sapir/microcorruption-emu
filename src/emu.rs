@@ -3,6 +3,7 @@ use super::disasm::{
 };
 use std::convert::TryInto;
 use std::ops::{Index, IndexMut};
+use std::path::Path;
 
 #[derive(Clone, Debug)]
 pub enum Error {
@@ -18,6 +19,12 @@ impl Memory {
         Self {
             data: vec![0; 0x1_0000],
         }
+    }
+
+    pub fn from_dump<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+        let data = std::fs::read(path)?;
+        assert_eq!(data.len(), 0x1_0000);
+        Ok(Self { data })
     }
 
     pub fn get_byte(&self, addr: u16) -> u8 {
@@ -172,6 +179,13 @@ impl Emulator {
             regs: Registers::new(),
             mem: Memory::new(),
         }
+    }
+
+    pub fn from_dump<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+        let mem = Memory::from_dump(path)?;
+        let mut regs = Registers::new();
+        regs[REG_PC] = mem.get_word(0xfffe).unwrap();
+        Ok(Self { regs, mem })
     }
 
     pub fn pc(&self) -> u16 {
