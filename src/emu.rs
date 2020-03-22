@@ -442,12 +442,12 @@ impl Emulator {
                     }
 
                     Bis(size) => {
-                        value = self.read_operand(&insn.operands[1], size) | value;
+                        value |= self.read_operand(&insn.operands[1], size);
                     }
 
                     Xor(size) => {
                         let opnd2 = self.read_operand(&insn.operands[1], size);
-                        value = opnd2 ^ value;
+                        value ^= opnd2;
 
                         self.regs.set_status_bits(
                             size,

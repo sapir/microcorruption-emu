@@ -258,8 +258,8 @@ fn fmt_reg(f: &mut std::fmt::Formatter, reg: u16) -> std::fmt::Result {
 
 impl Display for Operand {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            &Operand::Register {
+        match *self {
+            Operand::Register {
                 reg,
                 mode,
                 increment,
@@ -278,15 +278,15 @@ impl Display for Operand {
                 Ok(())
             }
 
-            &Operand::Indexed { reg, offset } => {
+            Operand::Indexed { reg, offset } => {
                 write!(f, "{:#x}(", offset)?;
                 fmt_reg(f, reg)?;
                 write!(f, ")")
             }
 
-            &Operand::Immediate(x) => write!(f, "#{:#x}", x),
+            Operand::Immediate(x) => write!(f, "#{:#x}", x),
 
-            &Operand::Absolute(x) => write!(f, "&{:#x}", x),
+            Operand::Absolute(x) => write!(f, "&{:#x}", x),
         }
     }
 }
@@ -349,7 +349,7 @@ where
     };
 
     if (word >> 13) == 0b000 {
-        if (word >> 10) != 0b000100 {
+        if (word >> 10) != 0b00_0100 {
             return Err(Error::BadOpcode { word });
         }
 
