@@ -1,5 +1,6 @@
 use super::disasm::{next_insn, AccessSize, Instruction, Opcode, Operand, RegisterMode, REG_PC};
 use std::convert::TryInto;
+use std::ops::{Index, IndexMut};
 
 #[derive(Clone, Debug)]
 pub enum Error {
@@ -67,21 +68,49 @@ impl Memory {
     }
 }
 
+pub struct Registers {
+    regs: [u16; 16],
+}
+
+impl Registers {
+    pub fn new() -> Self {
+        Self { regs: [0; 16] }
+    }
+
+    pub fn pc(&self) -> u16 {
+        self[REG_PC]
+    }
+}
+
+impl Index<u16> for Registers {
+    type Output = u16;
+
+    fn index(&self, index: u16) -> &u16 {
+        &self.regs[usize::from(index)]
+    }
+}
+
+impl IndexMut<u16> for Registers {
+    fn index_mut(&mut self, index: u16) -> &mut u16 {
+        &mut self.regs[usize::from(index)]
+    }
+}
+
 pub struct Emulator {
-    pub regs: [u16; 16],
+    pub regs: Registers,
     pub mem: Memory,
 }
 
 impl Emulator {
     pub fn new() -> Self {
         Self {
-            regs: [0; 16],
+            regs: Registers::new(),
             mem: Memory::new(),
         }
     }
 
     pub fn pc(&self) -> u16 {
-        self.regs[usize::from(REG_PC)]
+        self.regs.pc()
     }
 
     fn read_operand(&mut self, operand: &Operand, size: AccessSize) -> u16 {
@@ -91,7 +120,7 @@ impl Emulator {
                 mode,
                 increment,
             } => {
-                let value = self.regs[usize::from(*reg)];
+                let value = self.regs[*reg];
 
                 let value = match mode {
                     RegisterMode::Direct => value,
@@ -99,7 +128,7 @@ impl Emulator {
                 };
 
                 if *increment {
-                    self.regs[usize::from(*reg)] += match size {
+                    self.regs[*reg] += match size {
                         AccessSize::Byte => 1,
                         AccessSize::Word => 2,
                     };
@@ -109,7 +138,7 @@ impl Emulator {
             }
 
             Operand::Indexed { reg, offset } => {
-                let mut addr = self.regs[usize::from(*reg)];
+                let mut addr = self.regs[*reg];
                 addr = addr.wrapping_add(*offset as u16);
                 self.mem.get(addr, size).unwrap()
             }
@@ -129,23 +158,21 @@ impl Emulator {
             } => {
                 assert!(!increment);
 
-                let reg = usize::from(*reg);
-
                 match mode {
                     RegisterMode::Direct => {
                         if size == AccessSize::Byte {
                             assert_eq!(value, value & 0xff);
                         }
 
-                        self.regs[reg] = value;
+                        self.regs[*reg] = value;
                     }
 
-                    RegisterMode::Indirect => self.mem.set(self.regs[reg], size, value).unwrap(),
+                    RegisterMode::Indirect => self.mem.set(self.regs[*reg], size, value).unwrap(),
                 }
             }
 
             Operand::Indexed { reg, offset } => {
-                let mut addr = self.regs[usize::from(*reg)];
+                let mut addr = self.regs[*reg];
                 addr = addr.wrapping_add(*offset as u16);
                 self.mem.set(addr, size, value).unwrap()
             }
