@@ -1,5 +1,5 @@
 use super::disasm::{
-    next_insn, AccessSize, Instruction, Opcode, Operand, RegisterMode, REG_PC, REG_SR,
+    next_insn, AccessSize, Instruction, Opcode, Operand, RegisterMode, REG_PC, REG_SP, REG_SR,
 };
 use std::convert::TryInto;
 use std::ops::{Index, IndexMut};
@@ -246,6 +246,17 @@ impl Emulator {
         }
     }
 
+    fn push(&mut self, value: u16) {
+        self.regs[REG_SP] = self.regs[REG_SP].wrapping_sub(2);
+        self.mem.set_word(self.regs[REG_SP], value).unwrap();
+    }
+
+    fn pop(&mut self) -> u16 {
+        let value = self.mem.get_word(self.regs[REG_SP]).unwrap();
+        self.regs[REG_SP] = self.regs[REG_SP].wrapping_add(2);
+        value
+    }
+
     pub fn perform(&mut self, insn: &Instruction) {
         use Opcode::*;
 
@@ -293,9 +304,23 @@ impl Emulator {
                     .set_status_bits(AccessSize::Word, value, value != 0, false);
             }
 
-            Push(size) => todo!(),
-            Call => todo!(),
-            Reti => todo!(),
+            Push(size) => {
+                let value = self.read_operand(&insn.operands[0], size);
+                self.push(value);
+            }
+
+            Call => {
+                let ret_addr = self.pc();
+                self.push(ret_addr);
+
+                let dest = self.read_operand(&insn.operands[0], AccessSize::Word);
+                self.regs[REG_PC] = dest;
+            }
+
+            Reti => {
+                self.regs[REG_SR] = self.pop();
+                self.regs[REG_PC] = self.pop();
+            }
 
             Jne | Jeq | Jnc | Jc | Jn | Jge | Jl | Jmp => {
                 let cond = match insn.opcode {
