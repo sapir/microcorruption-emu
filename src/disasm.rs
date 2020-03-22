@@ -1,6 +1,5 @@
 use arrayvec::ArrayVec;
 use std::convert::TryInto;
-use std::io::prelude::*;
 
 #[derive(Clone, Debug)]
 pub enum Error {
