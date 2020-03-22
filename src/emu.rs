@@ -396,6 +396,9 @@ impl Emulator {
                             AccessSize::Word => 4,
                         };
 
+                        // ctf seems not to touch the negative bit
+                        let old_neg = self.regs.status_n();
+
                         value = 0;
                         // ctf seems to ignore the carry bit
                         // self.regs.status_c().into();
@@ -405,6 +408,7 @@ impl Emulator {
 
                             let mut sum_digit =
                                 get_nibble(opnd1, shift) + get_nibble(opnd2, shift) + carry;
+
                             if sum_digit >= 10 {
                                 sum_digit -= 10;
                                 // in case it's >= 16
@@ -420,6 +424,8 @@ impl Emulator {
                         self.write_operand(&insn.operands[1], size, value);
 
                         self.regs.set_status_bits(size, value, carry != 0, false);
+                        self.regs[REG_SR] &= !(1 << STATUS_BIT_N);
+                        self.regs[REG_SR] |= u16::from(old_neg) << STATUS_BIT_N;
                     }
 
                     Bit(size) | And(size) => {
@@ -478,9 +484,22 @@ mod tests {
     use super::*;
     use arrayvec::ArrayVec;
 
-    fn do_dadd_test(emu: &mut Emulator, size: AccessSize, a: u16, b: u16, expected: u16) {
+    fn do_dadd_test(
+        emu: &mut Emulator,
+        size: AccessSize,
+        a: u16,
+        b: u16,
+        expected: u16,
+        old_sr: u16,
+        expected_sr: u16,
+    ) {
+        println!(
+            "Testing dadd {:#x}, {:#x} = {:#x}, SR={:#x}",
+            a, b, expected, expected_sr
+        );
+
         // Clear status register to avoid involving carry
-        emu.regs[REG_SR] = 0;
+        emu.regs[REG_SR] = old_sr;
         emu.regs[14] = a;
         emu.regs[15] = b;
         emu.perform(&Instruction {
@@ -498,15 +517,30 @@ mod tests {
                 a, b, expected, emu.regs[15]
             );
         }
+
+        assert_eq!(emu.regs[REG_SR], expected_sr);
     }
 
     #[test]
     fn test_dadd() {
         let mut emu = Emulator::new();
-        do_dadd_test(&mut emu, AccessSize::Word, 0x160e, 0x04a2, 0x2116);
-        do_dadd_test(&mut emu, AccessSize::Word, 0x3c01, 0x0845, 0x4a46);
-        do_dadd_test(&mut emu, AccessSize::Word, 0x3c01, 0x0dd0, 0x4031);
-        do_dadd_test(&mut emu, AccessSize::Word, 0xf, 0xf, 0x14);
+        do_dadd_test(&mut emu, AccessSize::Word, 0x1, 0x1, 0x2, 0, 0);
+        do_dadd_test(&mut emu, AccessSize::Word, 0x1, 0x2, 0x3, 0, 0);
+        do_dadd_test(&mut emu, AccessSize::Word, 0x2, 0x1, 0x3, 0, 0);
+        do_dadd_test(&mut emu, AccessSize::Word, 0x10, 0x10, 0x20, 0, 0);
+        do_dadd_test(&mut emu, AccessSize::Word, 0x6540, 0x13c, 0x6682, 0, 0);
+        do_dadd_test(&mut emu, AccessSize::Word, 0x160e, 0x04a2, 0x2116, 0, 0);
+        do_dadd_test(&mut emu, AccessSize::Word, 0x3c01, 0x0845, 0x4a46, 0, 0);
+        do_dadd_test(&mut emu, AccessSize::Word, 0x3c01, 0xdd01, 0x7f02, 0, 1);
+        do_dadd_test(&mut emu, AccessSize::Word, 0x3c01, 0x0dd0, 0x4031, 0, 0);
+        do_dadd_test(&mut emu, AccessSize::Word, 0xf, 0xf, 0x14, 0, 0);
+        do_dadd_test(&mut emu, AccessSize::Word, 0x1858, 0x29a3, 0x4861, 0, 0);
+        do_dadd_test(&mut emu, AccessSize::Word, 0x3c01, 0x19e6, 0x5c47, 0, 0);
+        do_dadd_test(&mut emu, AccessSize::Word, 0x8000, 0x0, 0x8000, 0, 0);
+        do_dadd_test(&mut emu, AccessSize::Word, 0x0, 0x8000, 0x8000, 0, 0);
+        // doesn't touch negative bit
+        do_dadd_test(&mut emu, AccessSize::Word, 0x0, 0x8000, 0x8000, 4, 4);
+        do_dadd_test(&mut emu, AccessSize::Word, 0x3c01, 0x19e6, 0x5c47, 4, 4);
     }
 
     fn do_sub_test(
