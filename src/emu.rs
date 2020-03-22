@@ -410,7 +410,9 @@ impl Emulator {
                         };
 
                         value = 0;
-                        let mut carry = self.regs.status_c().into();
+                        // ctf seems to ignore the carry bit
+                        // self.regs.status_c().into();
+                        let mut carry = 0;
                         for i in 0..num_digits {
                             let shift = 4 * i;
 
