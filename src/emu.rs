@@ -138,24 +138,6 @@ impl Registers {
         sr |= (v as u16) << STATUS_BIT_V;
         self[REG_SR] = sr;
     }
-
-    /// Calculate status V bit for add operations.
-    /// See http://www.ti.com/lit/ug/slau144j/slau144j.pdf table 3-1
-    pub fn calc_add_overflow(size: AccessSize, a: u16, b: u16, result: u16) -> bool {
-        let a_is_neg = Self::is_negative(size, a);
-        let b_is_neg = Self::is_negative(size, b);
-        let res_is_neg = Self::is_negative(size, result);
-        a_is_neg == b_is_neg && a_is_neg != res_is_neg
-    }
-
-    /// Calculate status V bit for subtraction operations.
-    /// See http://www.ti.com/lit/ug/slau144j/slau144j.pdf table 3-1
-    pub fn calc_sub_overflow(size: AccessSize, a: u16, b: u16, result: u16) -> bool {
-        let a_is_neg = Self::is_negative(size, a);
-        let b_is_neg = Self::is_negative(size, b);
-        let res_is_neg = Self::is_negative(size, result);
-        a_is_neg != b_is_neg && b_is_neg == res_is_neg
-    }
 }
 
 impl Index<u16> for Registers {
@@ -392,16 +374,9 @@ impl Emulator {
                         let value32 = u32::from(final_opnd1).wrapping_add(opnd2.into());
                         value = value32 as u16;
 
-                        self.regs.set_status_bits(
-                            size,
-                            value,
-                            value32 > 0xffff,
-                            if matches!(insn.opcode, Add(_) | Addc(_)) {
-                                Registers::calc_add_overflow(size, opnd1, opnd2, value)
-                            } else {
-                                Registers::calc_sub_overflow(size, opnd1, opnd2, value)
-                            },
-                        )
+                        // Apparently ctf emulator doesn't set the overflow bit here
+                        self.regs
+                            .set_status_bits(size, value, value32 > 0xffff, false)
                     }
 
                     Dadd(size) => {
@@ -527,5 +502,52 @@ mod tests {
         do_dadd_test(&mut emu, AccessSize::Word, 0x3c01, 0x0845, 0x4a46);
         do_dadd_test(&mut emu, AccessSize::Word, 0x3c01, 0x0dd0, 0x4031);
         do_dadd_test(&mut emu, AccessSize::Word, 0xf, 0xf, 0x14);
+    }
+
+    fn do_sub_test(
+        emu: &mut Emulator,
+        size: AccessSize,
+        a: u16,
+        b: u16,
+        expected: u16,
+        expected_sr: u16,
+    ) {
+        println!(
+            "Testing {:#x} - {:#x} = {:#x}, SR={:#x}",
+            a, b, expected, expected_sr
+        );
+        emu.regs[REG_SR] = 0;
+        emu.regs[14] = a;
+        emu.perform(&Instruction {
+            opcode: Opcode::Sub(size),
+            operands: ArrayVec::from([Operand::Immediate(b), Operand::new_direct_register(14)]),
+            byte_size: 4,
+        });
+        assert_eq!(emu.regs[14], expected);
+        assert_eq!(emu.regs[REG_SR], expected_sr);
+    }
+
+    #[test]
+    fn test_sub() {
+        let mut emu = Emulator::new();
+        do_sub_test(&mut emu, AccessSize::Word, 0, 0, 0, 3);
+        do_sub_test(&mut emu, AccessSize::Word, 0x1111, 1, 0x1110, 1);
+        do_sub_test(&mut emu, AccessSize::Word, 0x1111, 0x10, 0x1101, 1);
+        do_sub_test(&mut emu, AccessSize::Word, 0x1111, 0x1000, 0x111, 1);
+        do_sub_test(&mut emu, AccessSize::Word, 0x1111, 0x2000, 0xf111, 4);
+        do_sub_test(&mut emu, AccessSize::Word, 0x1111, 0x7000, 0xa111, 4);
+        do_sub_test(&mut emu, AccessSize::Word, 0x1111, 0x8000, 0x9111, 4);
+        do_sub_test(&mut emu, AccessSize::Word, 0xffff, 1, 0xfffe, 5);
+        do_sub_test(&mut emu, AccessSize::Word, 0xffff, 0x10, 0xffef, 5);
+        do_sub_test(&mut emu, AccessSize::Word, 0xffff, 0x1000, 0xefff, 5);
+        do_sub_test(&mut emu, AccessSize::Word, 0xffff, 0xffff, 0, 3);
+        do_sub_test(&mut emu, AccessSize::Word, 0xffff, 0xfff0, 0xf, 1);
+        do_sub_test(&mut emu, AccessSize::Word, 0xffff, 0x9000, 0x6fff, 1);
+        do_sub_test(&mut emu, AccessSize::Word, 0xffff, 0x8010, 0x7fef, 1);
+        do_sub_test(&mut emu, AccessSize::Word, 0xffff, 0x8001, 0x7ffe, 1);
+        do_sub_test(&mut emu, AccessSize::Word, 0xffff, 0x8000, 0x7fff, 1);
+        do_sub_test(&mut emu, AccessSize::Word, 0xf216, 0x4d2, 0xed44, 0x5);
+        do_sub_test(&mut emu, AccessSize::Word, 0x4582, 0x8000, 0xc582, 0x4);
+        do_sub_test(&mut emu, AccessSize::Word, 0x82bc, 0x8000, 0x2bc, 0x1);
     }
 }
