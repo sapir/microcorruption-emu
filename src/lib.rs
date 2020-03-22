@@ -1,8 +1,9 @@
-use pyo3::prelude::*;
-use pyo3::wrap_pyfunction;
-
 mod disasm;
 mod emu;
+
+use pyo3::exceptions::ValueError;
+use pyo3::prelude::*;
+use pyo3::wrap_pyfunction;
 
 #[pyclass]
 struct Emulator {
@@ -39,6 +40,13 @@ impl Emulator {
     fn set_word(&mut self, addr: u16, value: u16) {
         // TODO: don't panic
         self.emu.mem.set_word(addr, value).unwrap();
+    }
+
+    fn next_insn(&self) -> PyResult<String> {
+        self.emu
+            .next_insn()
+            .map(|insn| insn.to_string())
+            .map_err(|e| ValueError::py_err(format!("{:?}", e)))
     }
 
     fn step(&mut self) {

@@ -469,8 +469,12 @@ impl Emulator {
         }
     }
 
+    pub fn next_insn(&self) -> super::disasm::Result<Instruction> {
+        next_insn(self.pc(), |addr| Some(self.mem.get_word(addr).unwrap()))
+    }
+
     pub fn step(&mut self) {
-        let insn = next_insn(self.pc(), |addr| Some(self.mem.get_word(addr).unwrap())).unwrap();
+        let insn = self.next_insn().unwrap();
         // Set next PC before calling perform(). This way any jumps can override the PC, and
         // instructions that need the address of the next instruction (=call) can just read the
         // value of PC.
