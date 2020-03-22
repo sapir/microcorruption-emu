@@ -1,5 +1,6 @@
 use arrayvec::ArrayVec;
 use std::convert::TryInto;
+use std::fmt::Display;
 
 #[derive(Clone, Debug)]
 pub enum Error {
@@ -61,6 +62,62 @@ pub enum Opcode {
     Bis(AccessSize),
     Xor(AccessSize),
     And(AccessSize),
+}
+
+impl Display for Opcode {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use AccessSize::*;
+        use Opcode::*;
+
+        write!(
+            f,
+            "{}",
+            match self {
+                Rrc(Byte) => "rrc.b",
+                Rrc(Word) => "rrc.w",
+                Swpb => "swpb",
+                Rra(Byte) => "rra.b",
+                Rra(Word) => "rra.w",
+                Sxt => "sxt",
+                Push(Byte) => "push.b",
+                Push(Word) => "push",
+                Call => "call",
+                Reti => "reti",
+                Jne => "jne",
+                Jeq => "jeq",
+                Jnc => "jnc",
+                Jc => "jc",
+                Jn => "jn",
+                Jge => "jge",
+                Jl => "jl",
+                Jmp => "jmp",
+                Mov(Byte) => "mov.b",
+                Mov(Word) => "mov",
+                Add(Byte) => "add.b",
+                Add(Word) => "add",
+                Addc(Byte) => "addc.b",
+                Addc(Word) => "addc",
+                Subc(Byte) => "subc.b",
+                Subc(Word) => "subc",
+                Sub(Byte) => "sub.b",
+                Sub(Word) => "sub",
+                Cmp(Byte) => "cmp.b",
+                Cmp(Word) => "cmp",
+                Dadd(Byte) => "dadd.b",
+                Dadd(Word) => "dadd",
+                Bit(Byte) => "bit.b",
+                Bit(Word) => "bit",
+                Bic(Byte) => "bic.b",
+                Bic(Word) => "bic",
+                Bis(Byte) => "bis.b",
+                Bis(Word) => "bis",
+                Xor(Byte) => "xor.b",
+                Xor(Word) => "xor",
+                And(Byte) => "and.b",
+                And(Word) => "and",
+            }
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -182,11 +239,74 @@ impl Operand {
     }
 }
 
+fn fmt_reg(f: &mut std::fmt::Formatter, reg: u16) -> std::fmt::Result {
+    match reg {
+        REG_PC => write!(f, "PC"),
+        REG_SP => write!(f, "SP"),
+        REG_SR => write!(f, "SR"),
+        REG_CG => write!(f, "CG"),
+        _ => write!(f, "R{}", reg),
+    }
+}
+
+impl Display for Operand {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            &Operand::Register {
+                reg,
+                mode,
+                increment,
+            } => {
+                match mode {
+                    RegisterMode::Direct => {}
+                    RegisterMode::Indirect => write!(f, "@")?,
+                }
+
+                fmt_reg(f, reg)?;
+
+                if increment {
+                    write!(f, "+")?;
+                }
+
+                Ok(())
+            }
+
+            &Operand::Indexed { reg, offset } => {
+                write!(f, "{:#x}(", offset)?;
+                fmt_reg(f, reg)?;
+                write!(f, ")")
+            }
+
+            &Operand::Immediate(x) => write!(f, "#{:#x}", x),
+
+            &Operand::Absolute(x) => write!(f, "&{:#x}", x),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Instruction {
     pub opcode: Opcode,
     pub operands: ArrayVec<[Operand; 2]>,
     pub byte_size: u16,
+}
+
+impl Display for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.opcode)?;
+
+        if let Some(opnd) = self.operands.get(0) {
+            write!(f, " ")?;
+            opnd.fmt(f)?;
+        }
+
+        if let Some(opnd) = self.operands.get(1) {
+            write!(f, ", ")?;
+            opnd.fmt(f)?;
+        }
+
+        Ok(())
+    }
 }
 
 pub fn next_insn<F>(mut addr: u16, mut get_word: F) -> Result<Instruction>
