@@ -150,6 +150,15 @@ pub enum Operand {
 }
 
 impl Operand {
+    #[cfg(test)]
+    pub fn new_direct_register(reg: u16) -> Self {
+        Operand::Register {
+            reg,
+            mode: RegisterMode::Direct,
+            increment: false,
+        }
+    }
+
     /// Returns operand and byte size
     fn with_reg<F>(
         addr: u16,

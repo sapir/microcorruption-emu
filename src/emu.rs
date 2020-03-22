@@ -15,6 +15,7 @@ pub struct Memory {
 }
 
 impl Memory {
+    #[cfg(test)]
     pub fn new() -> Self {
         Self {
             data: vec![0; 0x1_0000],
@@ -177,6 +178,7 @@ pub struct Emulator {
 }
 
 impl Emulator {
+    #[cfg(test)]
     pub fn new() -> Self {
         Self {
             regs: Registers::new(),
@@ -400,37 +402,33 @@ impl Emulator {
                             (x >> shift) & 0xf
                         }
 
-                        fn from_bcd(x: u16) -> u16 {
-                            get_nibble(x, 12) * 1000
-                                + get_nibble(x, 8) * 100
-                                + get_nibble(x, 4) * 10
-                                + get_nibble(x, 0)
-                        }
-
-                        fn get_digit(x: u16, digit_value: u16) -> u16 {
-                            (x / digit_value) % 10
-                        }
-
-                        fn to_bcd(x: u16) -> u16 {
-                            (get_digit(x, 1000) << 12)
-                                | (get_digit(x, 100) << 8)
-                                | (get_digit(x, 10) << 4)
-                                | get_digit(x, 1)
-                        }
-
                         let opnd2 = self.read_operand(&insn.operands[1], size);
-                        let num_value = from_bcd(opnd1).checked_add(from_bcd(opnd2)).unwrap();
-                        value = to_bcd(num_value);
+
+                        let num_digits = match size {
+                            AccessSize::Byte => 2,
+                            AccessSize::Word => 4,
+                        };
+
+                        value = 0;
+                        let mut carry = self.regs.status_c().into();
+                        for i in 0..num_digits {
+                            let shift = 4 * i;
+
+                            let mut sum_digit =
+                                get_nibble(opnd1, shift) + get_nibble(opnd2, shift) + carry;
+                            if sum_digit >= 10 {
+                                sum_digit -= 10;
+                                carry = 1;
+                            } else {
+                                carry = 0;
+                            }
+
+                            value |= sum_digit << shift;
+                        }
 
                         self.write_operand(&insn.operands[1], size, value);
 
-                        // TODO: when is N really set?
-                        let c = match size {
-                            AccessSize::Byte => num_value > 99,
-                            AccessSize::Word => num_value > 9999,
-                        };
-
-                        self.regs.set_status_bits(size, value, c, false);
+                        self.regs.set_status_bits(size, value, carry != 0, false);
                     }
 
                     Bit(size) | And(size) => {
@@ -481,5 +479,41 @@ impl Emulator {
         // value of PC.
         self.regs[REG_PC] = self.pc().wrapping_add(insn.byte_size);
         self.perform(&insn);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arrayvec::ArrayVec;
+
+    fn do_dadd_test(emu: &mut Emulator, size: AccessSize, a: u16, b: u16, expected: u16) {
+        // Clear status register to avoid involving carry
+        emu.regs[REG_SR] = 0;
+        emu.regs[14] = a;
+        emu.regs[15] = b;
+        emu.perform(&Instruction {
+            opcode: Opcode::Dadd(size),
+            operands: ArrayVec::from([
+                Operand::new_direct_register(14),
+                Operand::new_direct_register(15),
+            ]),
+            byte_size: 2,
+        });
+
+        if emu.regs[15] != expected {
+            panic!(
+                "dadd test failed, {:#x} + {:#x} should be {:#x}, got {:#x} instead",
+                a, b, expected, emu.regs[15]
+            );
+        }
+    }
+
+    #[test]
+    fn test_dadd() {
+        let mut emu = Emulator::new();
+        do_dadd_test(&mut emu, AccessSize::Word, 0x160e, 0x04a2, 0x2116);
+        do_dadd_test(&mut emu, AccessSize::Word, 0x3c01, 0x0845, 0x4a46);
+        do_dadd_test(&mut emu, AccessSize::Word, 0xf, 0xf, 0x14);
     }
 }
