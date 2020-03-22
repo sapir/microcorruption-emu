@@ -367,7 +367,7 @@ where
             });
         }
 
-        if matches!(opcode, Opcode::Swpb | Opcode::Sxt | Opcode::Call) && size != AccessSize::Byte {
+        if matches!(opcode, Opcode::Swpb | Opcode::Sxt | Opcode::Call) && size != AccessSize::Word {
             return Err(Error::BadOpcode { word });
         }
 
@@ -506,6 +506,22 @@ mod tests {
                     }
                 ]),
                 byte_size: 2
+            }][..]
+        );
+    }
+
+    #[test]
+    fn test_call() {
+        assert_eq!(
+            &*disasm(0x4400, b"\xb0\x12\x10\x00").unwrap(),
+            &[Instruction {
+                opcode: Opcode::Call,
+                operands: {
+                    let mut v = ArrayVec::new();
+                    v.push(Operand::Immediate(0x10));
+                    v
+                },
+                byte_size: 4
             }][..]
         );
     }
