@@ -253,10 +253,14 @@ impl Emulator {
             Operand::Indexed { reg, offset } => {
                 let mut addr = self.regs[*reg];
                 addr = addr.wrapping_add(*offset as u16);
-                self.mem.set(addr, size, value).unwrap()
+                self.mem.set(addr, size, value).unwrap();
             }
 
-            Operand::Immediate(_) | Operand::Absolute(_) => unreachable!(),
+            Operand::Absolute(addr) => {
+                self.mem.set(*addr, size, value).unwrap();
+            }
+
+            Operand::Immediate(_) => unreachable!(),
         }
     }
 
