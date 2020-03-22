@@ -377,7 +377,7 @@ impl Emulator {
                             final_opnd1 = !final_opnd1;
                         }
 
-                        if matches!(insn.opcode, Sub(_)) {
+                        if matches!(insn.opcode, Sub(_) | Cmp(_)) {
                             final_opnd1 = final_opnd1.wrapping_add(1);
                         } else if matches!(insn.opcode, Addc(_) | Subc(_)) {
                             final_opnd1 = final_opnd1.wrapping_add(self.regs.status_c().into());
