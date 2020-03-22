@@ -369,18 +369,18 @@ impl Emulator {
                     Add(size) | Addc(size) | Sub(size) | Cmp(size) | Subc(size) => {
                         let opnd2 = self.read_operand(&insn.operands[1], size);
 
-                        let mut final_opnd2 = opnd2;
+                        let mut final_opnd1 = opnd1;
                         if matches!(insn.opcode, Sub(_) | Cmp(_) | Subc(_)) {
-                            final_opnd2 = !final_opnd2;
+                            final_opnd1 = !final_opnd1;
                         }
 
                         if matches!(insn.opcode, Sub(_)) {
-                            final_opnd2 = final_opnd2.wrapping_add(1);
+                            final_opnd1 = final_opnd1.wrapping_add(1);
                         } else if matches!(insn.opcode, Addc(_) | Subc(_)) {
-                            final_opnd2 = final_opnd2.wrapping_add(self.regs.status_c().into());
+                            final_opnd1 = final_opnd1.wrapping_add(self.regs.status_c().into());
                         }
 
-                        let value32 = u32::from(final_opnd2).wrapping_add(value.into());
+                        let value32 = u32::from(final_opnd1).wrapping_add(opnd2.into());
                         value = value32 as u16;
 
                         self.regs.set_status_bits(
