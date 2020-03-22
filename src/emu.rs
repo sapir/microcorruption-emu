@@ -111,10 +111,7 @@ impl Registers {
 
     /// Used for calculating status bits
     fn is_negative(size: AccessSize, value: u16) -> bool {
-        match size {
-            AccessSize::Byte => (value & 0x80) != 0,
-            AccessSize::Word => (value & 0x8000) != 0,
-        }
+        (value & size.msb()) != 0
     }
 
     /// `result` is the result of the instruction, the value stored in the destination
@@ -253,7 +250,24 @@ impl Emulator {
         use Opcode::*;
 
         match insn.opcode {
-            Rrc(size) => todo!(),
+            Rrc(size) | Rra(size) => {
+                let mut value = self.read_operand(&insn.operands[0], size);
+                let c = (value & 1) != 0;
+                let new_msb = match insn.opcode {
+                    Rrc(_) => self.regs.status_c(),
+                    Rra(_) => (value & size.msb()) != 0,
+                    _ => unreachable!(),
+                };
+
+                value >>= 1;
+                if new_msb {
+                    value |= size.msb();
+                }
+
+                self.write_operand(&insn.operands[0], size, value);
+
+                self.regs.set_status_bits(size, value, c, false);
+            }
 
             Swpb => {
                 let value = self.read_operand(&insn.operands[0], AccessSize::Word);
@@ -266,8 +280,6 @@ impl Emulator {
                 self.regs
                     .set_status_bits(AccessSize::Word, value, value != 0, false);
             }
-
-            Rra(size) => todo!(),
 
             Sxt => {
                 let mut value = self.read_operand(&insn.operands[0], AccessSize::Byte);

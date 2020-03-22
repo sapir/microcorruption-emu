@@ -16,6 +16,15 @@ pub enum AccessSize {
     Word,
 }
 
+impl AccessSize {
+    pub fn msb(self) -> u16 {
+        match self {
+            AccessSize::Byte => 0x80,
+            AccessSize::Word => 0x8000,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AddressingMode {
     Direct,
