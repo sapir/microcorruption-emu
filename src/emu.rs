@@ -297,14 +297,23 @@ impl Emulator {
             Call => todo!(),
             Reti => todo!(),
 
-            Jne => todo!(),
-            Jeq => todo!(),
-            Jnc => todo!(),
-            Jc => todo!(),
-            Jn => todo!(),
-            Jge => todo!(),
-            Jl => todo!(),
-            Jmp => todo!(),
+            Jne | Jeq | Jnc | Jc | Jn | Jge | Jl | Jmp => {
+                let cond = match insn.opcode {
+                    Jne => !self.regs.status_z(),
+                    Jeq => self.regs.status_z(),
+                    Jnc => !self.regs.status_c(),
+                    Jc => self.regs.status_c(),
+                    Jn => self.regs.status_n(),
+                    Jge => !(self.regs.status_n() ^ self.regs.status_v()),
+                    Jl => self.regs.status_n() ^ self.regs.status_v(),
+                    Jmp => true,
+                    _ => unreachable!(),
+                };
+
+                if cond {
+                    self.regs[REG_PC] = self.read_operand(&insn.operands[0], AccessSize::Word);
+                }
+            }
 
             Mov(size) | Add(size) | Addc(size) | Subc(size) | Sub(size) | Cmp(size)
             | Dadd(size) | Bit(size) | Bic(size) | Bis(size) | Xor(size) | And(size) => {
@@ -386,6 +395,10 @@ impl Emulator {
 
     pub fn step(&mut self) {
         let insn = next_insn(self.pc(), |addr| Some(self.mem.get_word(addr).unwrap())).unwrap();
+        // Set next PC before calling perform(). This way any jumps can override the PC, and
+        // instructions that need the address of the next instruction (=call) can just read the
+        // value of PC.
+        self.regs[REG_PC] = self.pc().wrapping_add(insn.byte_size);
         self.perform(&insn);
     }
 }
