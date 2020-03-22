@@ -378,7 +378,40 @@ impl Emulator {
                     }
 
                     Dadd(size) => {
-                        todo!();
+                        fn get_nibble(x: u16, shift: u16) -> u16 {
+                            (x >> shift) & 0xf
+                        }
+
+                        fn from_bcd(x: u16) -> u16 {
+                            get_nibble(x, 12) * 1000
+                                + get_nibble(x, 8) * 100
+                                + get_nibble(x, 4) * 10
+                                + get_nibble(x, 0)
+                        }
+
+                        fn get_digit(x: u16, digit_value: u16) -> u16 {
+                            (x / digit_value) % 10
+                        }
+
+                        fn to_bcd(x: u16) -> u16 {
+                            (get_digit(x, 1000) << 12)
+                                | (get_digit(x, 100) << 8)
+                                | (get_digit(x, 10) << 4)
+                                | get_digit(x, 1)
+                        }
+
+                        let opnd2 = self.read_operand(&insn.operands[1], size);
+                        let value = from_bcd(opnd1).checked_add(from_bcd(opnd2)).unwrap();
+                        let encoded_value = to_bcd(value);
+                        self.write_operand(&insn.operands[1], size, encoded_value);
+
+                        // TODO: when is N really set?
+                        let c = match size {
+                            AccessSize::Byte => value > 99,
+                            AccessSize::Word => value > 9999,
+                        };
+
+                        self.regs.set_status_bits(size, encoded_value, c, false);
                     }
 
                     Bit(size) | And(size) => {
