@@ -427,6 +427,8 @@ impl Emulator {
                                 get_nibble(opnd1, shift) + get_nibble(opnd2, shift) + carry;
                             if sum_digit >= 10 {
                                 sum_digit -= 10;
+                                // in case it's >= 16
+                                sum_digit &= 0xf;
                                 carry = 1;
                             } else {
                                 carry = 0;
@@ -523,6 +525,7 @@ mod tests {
         let mut emu = Emulator::new();
         do_dadd_test(&mut emu, AccessSize::Word, 0x160e, 0x04a2, 0x2116);
         do_dadd_test(&mut emu, AccessSize::Word, 0x3c01, 0x0845, 0x4a46);
+        do_dadd_test(&mut emu, AccessSize::Word, 0x3c01, 0x0dd0, 0x4031);
         do_dadd_test(&mut emu, AccessSize::Word, 0xf, 0xf, 0x14);
     }
 }
