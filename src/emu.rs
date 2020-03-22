@@ -419,17 +419,18 @@ impl Emulator {
                         }
 
                         let opnd2 = self.read_operand(&insn.operands[1], size);
-                        let value = from_bcd(opnd1).checked_add(from_bcd(opnd2)).unwrap();
-                        let encoded_value = to_bcd(value);
-                        self.write_operand(&insn.operands[1], size, encoded_value);
+                        let num_value = from_bcd(opnd1).checked_add(from_bcd(opnd2)).unwrap();
+                        value = to_bcd(num_value);
+
+                        self.write_operand(&insn.operands[1], size, value);
 
                         // TODO: when is N really set?
                         let c = match size {
-                            AccessSize::Byte => value > 99,
-                            AccessSize::Word => value > 9999,
+                            AccessSize::Byte => num_value > 99,
+                            AccessSize::Word => num_value > 9999,
                         };
 
-                        self.regs.set_status_bits(size, encoded_value, c, false);
+                        self.regs.set_status_bits(size, value, c, false);
                     }
 
                     Bit(size) | And(size) => {
