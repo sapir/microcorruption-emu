@@ -126,8 +126,11 @@ impl Registers {
     pub fn set_status_bits(&mut self, size: AccessSize, result: u16, c: bool, v: bool) {
         let z = result == 0;
         let n = Self::is_negative(size, result);
-        let mut sr = self[REG_SR];
-        sr &= !(STATUS_BIT_C | STATUS_BIT_Z | STATUS_BIT_N | STATUS_BIT_V);
+        // CTF emulator seems to clears other bits here, level 19 requires this to happen
+        // soon after the INT() call.
+        // let mut sr = self[REG_SR];
+        // sr &= !(STATUS_BIT_C | STATUS_BIT_Z | STATUS_BIT_N | STATUS_BIT_V);
+        let mut sr = 0;
         sr |= (c as u16) << STATUS_BIT_C;
         sr |= (z as u16) << STATUS_BIT_Z;
         sr |= (n as u16) << STATUS_BIT_N;
