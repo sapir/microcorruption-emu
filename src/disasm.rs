@@ -151,7 +151,7 @@ pub enum Operand {
 
 impl Operand {
     /// Returns operand and byte size
-    fn reg<F>(
+    fn with_reg<F>(
         addr: u16,
         reg: u16,
         mode: AddressingMode,
@@ -374,7 +374,7 @@ where
         }
 
         let reg = word & 0xf;
-        let (operand, opnd_size) = Operand::reg(addr0, reg, src_mode, true, next_word)?;
+        let (operand, opnd_size) = Operand::with_reg(addr0, reg, src_mode, true, next_word)?;
         byte_size += opnd_size;
         let mut operands = ArrayVec::new();
         operands.push(operand);
@@ -419,7 +419,7 @@ where
         let mut operands = ArrayVec::new();
 
         let src_reg = (word >> 8) & 0xf;
-        let (src, opnd_size) = Operand::reg(addr0, src_reg, src_mode, true, &mut next_word)?;
+        let (src, opnd_size) = Operand::with_reg(addr0, src_reg, src_mode, true, &mut next_word)?;
         operands.push(src);
         byte_size += opnd_size;
 
@@ -429,7 +429,7 @@ where
             1 => AddressingMode::Indexed,
             _ => unreachable!(),
         };
-        let (dst, opnd_size) = Operand::reg(addr0, dst_reg, dst_mode, false, next_word)?;
+        let (dst, opnd_size) = Operand::with_reg(addr0, dst_reg, dst_mode, false, next_word)?;
         operands.push(dst);
         byte_size += opnd_size;
 
