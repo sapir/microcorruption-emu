@@ -37,7 +37,7 @@ impl Memory {
         }
 
         Ok(u16::from_le_bytes(
-            self.data[usize::from(addr)..usize::from(addr + 2)]
+            self.data[usize::from(addr)..usize::from(addr) + 2]
                 .try_into()
                 .unwrap(),
         ))
@@ -60,7 +60,7 @@ impl Memory {
         }
 
         self.data[usize::from(addr)] = (value & 0xff).try_into().unwrap();
-        self.data[usize::from(addr + 1)] = (value >> 8).try_into().unwrap();
+        self.data[usize::from(addr) + 1] = (value >> 8).try_into().unwrap();
 
         Ok(())
     }
