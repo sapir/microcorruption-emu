@@ -286,7 +286,14 @@ impl Emulator {
         match insn.opcode {
             Rrc(size) | Rra(size) => {
                 let mut value = self.read_operand(&insn.operands[0], size);
-                let c = (value & 1) != 0;
+
+                // ctf seems to drop the carry on Rra
+                let c = match insn.opcode {
+                    Rrc(_) => (value & 1) != 0,
+                    Rra(_) => false,
+                    _ => unreachable!(),
+                };
+
                 let new_msb = match insn.opcode {
                     Rrc(_) => self.regs.status_c(),
                     Rra(_) => (value & size.msb()) != 0,
