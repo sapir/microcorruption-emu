@@ -374,9 +374,14 @@ impl Emulator {
                         let value32 = u32::from(final_opnd1).wrapping_add(opnd2.into());
                         value = value32 as u16;
 
+                        let carry = if matches!(insn.opcode, Sub(_) | Cmp(_) | Subc(_)) {
+                            opnd2 >= opnd1
+                        } else {
+                            value32 > 0xffff
+                        };
+
                         // Apparently ctf emulator doesn't set the overflow bit here
-                        self.regs
-                            .set_status_bits(size, value, value32 > 0xffff, false)
+                        self.regs.set_status_bits(size, value, carry, false)
                     }
 
                     Dadd(size) => {
@@ -546,6 +551,9 @@ mod tests {
         do_sub_test(&mut emu, AccessSize::Word, 0xffff, 0x8010, 0x7fef, 1);
         do_sub_test(&mut emu, AccessSize::Word, 0xffff, 0x8001, 0x7ffe, 1);
         do_sub_test(&mut emu, AccessSize::Word, 0xffff, 0x8000, 0x7fff, 1);
+        do_sub_test(&mut emu, AccessSize::Word, 0x8000, 1, 0x7fff, 1);
+        do_sub_test(&mut emu, AccessSize::Word, 0x8000, 0x8000, 0, 3);
+        do_sub_test(&mut emu, AccessSize::Word, 0x8000, 0x7fff, 1, 1);
         do_sub_test(&mut emu, AccessSize::Word, 0xf216, 0x4d2, 0xed44, 0x5);
         do_sub_test(&mut emu, AccessSize::Word, 0x4582, 0x8000, 0xc582, 0x4);
         do_sub_test(&mut emu, AccessSize::Word, 0x82bc, 0x8000, 0x2bc, 0x1);
