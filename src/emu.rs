@@ -308,9 +308,6 @@ impl Emulator {
                     AccessSize::Word,
                     (value >> 8) | (value << 8),
                 );
-
-                self.regs
-                    .set_status_bits(AccessSize::Word, value, value != 0, false);
             }
 
             Sxt => {
