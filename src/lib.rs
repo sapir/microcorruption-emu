@@ -4,7 +4,7 @@ mod emu;
 #[cfg(not(test))]
 mod pymod {
     use super::*;
-    use pyo3::exceptions::ValueError;
+    use pyo3::exceptions::{Exception, ValueError};
     use pyo3::prelude::*;
     use pyo3::wrap_pyfunction;
 
@@ -52,8 +52,10 @@ mod pymod {
                 .map_err(|e| ValueError::py_err(format!("{:?}", e)))
         }
 
-        fn step(&mut self) {
-            self.emu.step();
+        fn step(&mut self) -> PyResult<()> {
+            self.emu
+                .step()
+                .map_err(|e| Exception::py_err(format!("{:?}", e)))
         }
     }
 

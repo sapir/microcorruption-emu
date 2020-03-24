@@ -1,5 +1,5 @@
 use super::disasm::{
-    next_insn, AccessSize, Instruction, Opcode, Operand, RegisterMode, REG_PC, REG_SP, REG_SR,
+    self, next_insn, AccessSize, Instruction, Opcode, Operand, RegisterMode, REG_PC, REG_SP, REG_SR,
 };
 use std::convert::TryInto;
 use std::ops::{Index, IndexMut};
@@ -7,8 +7,11 @@ use std::path::Path;
 
 #[derive(Clone, Debug)]
 pub enum Error {
+    BadOpcode { pc: u16, word: u16 },
     UnalignedAccess { addr: u16 },
 }
+
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub struct Memory {
     pub data: Vec<u8>,
@@ -32,7 +35,7 @@ impl Memory {
         self.data[usize::from(addr)]
     }
 
-    pub fn get_word(&self, addr: u16) -> Result<u16, Error> {
+    pub fn get_word(&self, addr: u16) -> Result<u16> {
         if (addr & 1) != 0 {
             return Err(Error::UnalignedAccess { addr });
         }
@@ -44,7 +47,7 @@ impl Memory {
         ))
     }
 
-    pub fn get(&self, addr: u16, size: AccessSize) -> Result<u16, Error> {
+    pub fn get(&self, addr: u16, size: AccessSize) -> Result<u16> {
         match size {
             AccessSize::Byte => Ok(self.get_byte(addr).into()),
             AccessSize::Word => Ok(self.get_word(addr)?),
@@ -55,7 +58,7 @@ impl Memory {
         self.data[usize::from(addr)] = value;
     }
 
-    pub fn set_word(&mut self, addr: u16, value: u16) -> Result<(), Error> {
+    pub fn set_word(&mut self, addr: u16, value: u16) -> Result<()> {
         if (addr & 1) != 0 {
             return Err(Error::UnalignedAccess { addr });
         }
@@ -66,7 +69,7 @@ impl Memory {
         Ok(())
     }
 
-    pub fn set(&mut self, addr: u16, size: AccessSize, value: u16) -> Result<(), Error> {
+    pub fn set(&mut self, addr: u16, size: AccessSize, value: u16) -> Result<()> {
         match size {
             AccessSize::Byte => {
                 self.set_byte(addr, (value & 0xff).try_into().unwrap());
@@ -179,7 +182,7 @@ impl Emulator {
         self.regs.pc()
     }
 
-    fn read_operand(&mut self, operand: &Operand, size: AccessSize) -> u16 {
+    fn read_operand(&mut self, operand: &Operand, size: AccessSize) -> Result<u16> {
         match operand {
             Operand::Register {
                 reg,
@@ -190,7 +193,7 @@ impl Emulator {
 
                 let value = match mode {
                     RegisterMode::Direct => value,
-                    RegisterMode::Indirect => self.mem.get(value, size).unwrap(),
+                    RegisterMode::Indirect => self.mem.get(value, size)?,
                 };
 
                 if *increment {
@@ -200,22 +203,22 @@ impl Emulator {
                     };
                 }
 
-                value
+                Ok(value)
             }
 
             Operand::Indexed { reg, offset } => {
                 let mut addr = self.regs[*reg];
                 addr = addr.wrapping_add(*offset as u16);
-                self.mem.get(addr, size).unwrap()
+                self.mem.get(addr, size)
             }
 
-            Operand::Immediate(value) => *value,
+            Operand::Immediate(value) => Ok(*value),
 
-            Operand::Absolute(addr) => self.mem.get(*addr, size).unwrap(),
+            Operand::Absolute(addr) => self.mem.get(*addr, size),
         }
     }
 
-    pub fn write_operand(&mut self, operand: &Operand, size: AccessSize, value: u16) {
+    pub fn write_operand(&mut self, operand: &Operand, size: AccessSize, value: u16) -> Result<()> {
         match operand {
             Operand::Register {
                 reg,
@@ -231,43 +234,42 @@ impl Emulator {
                         }
 
                         self.regs[*reg] = value;
+                        Ok(())
                     }
 
-                    RegisterMode::Indirect => self.mem.set(self.regs[*reg], size, value).unwrap(),
+                    RegisterMode::Indirect => self.mem.set(self.regs[*reg], size, value),
                 }
             }
 
             Operand::Indexed { reg, offset } => {
                 let mut addr = self.regs[*reg];
                 addr = addr.wrapping_add(*offset as u16);
-                self.mem.set(addr, size, value).unwrap();
+                self.mem.set(addr, size, value)
             }
 
-            Operand::Absolute(addr) => {
-                self.mem.set(*addr, size, value).unwrap();
-            }
+            Operand::Absolute(addr) => self.mem.set(*addr, size, value),
 
             Operand::Immediate(_) => unreachable!(),
         }
     }
 
-    fn push(&mut self, value: u16) {
+    fn push(&mut self, value: u16) -> Result<()> {
         self.regs[REG_SP] = self.regs[REG_SP].wrapping_sub(2);
-        self.mem.set_word(self.regs[REG_SP], value).unwrap();
+        self.mem.set_word(self.regs[REG_SP], value)
     }
 
-    fn pop(&mut self) -> u16 {
-        let value = self.mem.get_word(self.regs[REG_SP]).unwrap();
+    fn pop(&mut self) -> Result<u16> {
+        let value = self.mem.get_word(self.regs[REG_SP])?;
         self.regs[REG_SP] = self.regs[REG_SP].wrapping_add(2);
-        value
+        Ok(value)
     }
 
-    pub fn perform(&mut self, insn: &Instruction) {
+    pub fn perform(&mut self, insn: &Instruction) -> Result<()> {
         use Opcode::*;
 
         match insn.opcode {
             Rrc(size) | Rra(size) => {
-                let mut value = self.read_operand(&insn.operands[0], size);
+                let mut value = self.read_operand(&insn.operands[0], size)?;
 
                 // ctf seems not to touch the carry bit for Rra
                 let c = match insn.opcode {
@@ -287,7 +289,7 @@ impl Emulator {
                     value |= size.msb();
                 }
 
-                self.write_operand(&insn.operands[0], size, value);
+                self.write_operand(&insn.operands[0], size, value)?;
 
                 self.regs.set_status_bits(size, value, c, false);
                 // zero bit is cleared by ctf :(
@@ -295,42 +297,42 @@ impl Emulator {
             }
 
             Swpb => {
-                let value = self.read_operand(&insn.operands[0], AccessSize::Word);
+                let value = self.read_operand(&insn.operands[0], AccessSize::Word)?;
                 self.write_operand(
                     &insn.operands[0],
                     AccessSize::Word,
                     (value >> 8) | (value << 8),
-                );
+                )?;
             }
 
             Sxt => {
-                let mut value = self.read_operand(&insn.operands[0], AccessSize::Byte);
+                let mut value = self.read_operand(&insn.operands[0], AccessSize::Byte)?;
                 if (value & 0x80) != 0 {
                     value |= 0xff00;
                 }
 
-                self.write_operand(&insn.operands[0], AccessSize::Word, value);
+                self.write_operand(&insn.operands[0], AccessSize::Word, value)?;
 
                 self.regs
                     .set_status_bits(AccessSize::Word, value, value != 0, false);
             }
 
             Push(size) => {
-                let value = self.read_operand(&insn.operands[0], size);
-                self.push(value);
+                let value = self.read_operand(&insn.operands[0], size)?;
+                self.push(value)?;
             }
 
             Call => {
                 let ret_addr = self.pc();
-                self.push(ret_addr);
+                self.push(ret_addr)?;
 
-                let dest = self.read_operand(&insn.operands[0], AccessSize::Word);
+                let dest = self.read_operand(&insn.operands[0], AccessSize::Word)?;
                 self.regs[REG_PC] = dest;
             }
 
             Reti => {
-                self.regs[REG_SR] = self.pop();
-                self.regs[REG_PC] = self.pop();
+                self.regs[REG_SR] = self.pop()?;
+                self.regs[REG_PC] = self.pop()?;
             }
 
             Jne | Jeq | Jnc | Jc | Jn | Jge | Jl | Jmp => {
@@ -347,20 +349,20 @@ impl Emulator {
                 };
 
                 if cond {
-                    self.regs[REG_PC] = self.read_operand(&insn.operands[0], AccessSize::Word);
+                    self.regs[REG_PC] = self.read_operand(&insn.operands[0], AccessSize::Word)?;
                 }
             }
 
             Mov(size) | Add(size) | Addc(size) | Subc(size) | Sub(size) | Cmp(size)
             | Dadd(size) | Bit(size) | Bic(size) | Bis(size) | Xor(size) | And(size) => {
-                let opnd1 = self.read_operand(&insn.operands[0], size);
+                let opnd1 = self.read_operand(&insn.operands[0], size)?;
                 let mut value = opnd1;
 
                 match insn.opcode {
                     Mov(_size) => {}
 
                     Add(size) | Addc(size) | Sub(size) | Cmp(size) | Subc(size) => {
-                        let opnd2 = self.read_operand(&insn.operands[1], size);
+                        let opnd2 = self.read_operand(&insn.operands[1], size)?;
 
                         let mut final_opnd1 = opnd1;
                         if matches!(insn.opcode, Sub(_) | Cmp(_) | Subc(_)) {
@@ -391,7 +393,7 @@ impl Emulator {
                             (x >> shift) & 0xf
                         }
 
-                        let opnd2 = self.read_operand(&insn.operands[1], size);
+                        let opnd2 = self.read_operand(&insn.operands[1], size)?;
 
                         let num_digits = match size {
                             AccessSize::Byte => 2,
@@ -423,7 +425,7 @@ impl Emulator {
                             value |= sum_digit << shift;
                         }
 
-                        self.write_operand(&insn.operands[1], size, value);
+                        self.write_operand(&insn.operands[1], size, value)?;
 
                         self.regs.set_status_bits(size, value, carry != 0, false);
                         self.regs[REG_SR] &= !(1 << STATUS_BIT_N);
@@ -431,21 +433,21 @@ impl Emulator {
                     }
 
                     Bit(size) | And(size) => {
-                        value &= self.read_operand(&insn.operands[1], size);
+                        value &= self.read_operand(&insn.operands[1], size)?;
 
                         self.regs.set_status_bits(size, value, value != 0, false);
                     }
 
                     Bic(size) => {
-                        value = self.read_operand(&insn.operands[1], size) & !value;
+                        value = self.read_operand(&insn.operands[1], size)? & !value;
                     }
 
                     Bis(size) => {
-                        value |= self.read_operand(&insn.operands[1], size);
+                        value |= self.read_operand(&insn.operands[1], size)?;
                     }
 
                     Xor(size) => {
-                        let opnd2 = self.read_operand(&insn.operands[1], size);
+                        let opnd2 = self.read_operand(&insn.operands[1], size)?;
                         value ^= opnd2;
 
                         self.regs.set_status_bits(
@@ -461,23 +463,35 @@ impl Emulator {
                 }
 
                 if !matches!(insn.opcode, Cmp(_size) | Bit(_size)) {
-                    self.write_operand(&insn.operands[1], size, value);
+                    self.write_operand(&insn.operands[1], size, value)?;
                 }
             }
         }
+
+        Ok(())
     }
 
-    pub fn next_insn(&self) -> super::disasm::Result<Instruction> {
-        next_insn(self.pc(), |addr| Some(self.mem.get_word(addr).unwrap()))
+    pub fn next_insn(&self) -> Result<Instruction> {
+        next_insn(self.pc(), |addr| Some(self.mem.get_word(addr).unwrap())).map_err(|e| match e {
+            disasm::Error::BadOpcode { word } => Error::BadOpcode {
+                pc: self.pc(),
+                word,
+            },
+
+            disasm::Error::Eof => unreachable!(),
+        })
     }
 
-    pub fn step(&mut self) {
-        let insn = self.next_insn().unwrap();
+    pub fn step(&mut self) -> Result<()> {
+        let insn = self.next_insn()?;
+
         // Set next PC before calling perform(). This way any jumps can override the PC, and
         // instructions that need the address of the next instruction (=call) can just read the
         // value of PC.
         self.regs[REG_PC] = self.pc().wrapping_add(insn.byte_size);
-        self.perform(&insn);
+        self.perform(&insn)?;
+
+        Ok(())
     }
 }
 
@@ -511,7 +525,8 @@ mod tests {
                 Operand::new_direct_register(15),
             ]),
             byte_size: 2,
-        });
+        })
+        .unwrap();
 
         if emu.regs[15] != expected {
             panic!(
@@ -563,7 +578,8 @@ mod tests {
             opcode: Opcode::Sub(size),
             operands: ArrayVec::from([Operand::Immediate(b), Operand::new_direct_register(14)]),
             byte_size: 4,
-        });
+        })
+        .unwrap();
         assert_eq!(emu.regs[14], expected);
         assert_eq!(emu.regs[REG_SR], expected_sr);
     }
@@ -617,7 +633,8 @@ mod tests {
                 v
             },
             byte_size: 4,
-        });
+        })
+        .unwrap();
         assert_eq!(emu.regs[15], expected);
         assert_eq!(emu.regs[REG_SR], expected_sr);
     }
