@@ -269,10 +269,10 @@ impl Emulator {
             Rrc(size) | Rra(size) => {
                 let mut value = self.read_operand(&insn.operands[0], size);
 
-                // ctf seems to drop the carry on Rra
+                // ctf seems not to touch the carry bit for Rra
                 let c = match insn.opcode {
                     Rrc(_) => (value & 1) != 0,
-                    Rra(_) => false,
+                    Rra(_) => self.regs.status_c(),
                     _ => unreachable!(),
                 };
 
@@ -290,6 +290,8 @@ impl Emulator {
                 self.write_operand(&insn.operands[0], size, value);
 
                 self.regs.set_status_bits(size, value, c, false);
+                // zero bit is cleared by ctf :(
+                self.regs[REG_SR] &= !(1 << STATUS_BIT_Z);
             }
 
             Swpb => {
@@ -591,5 +593,61 @@ mod tests {
         do_sub_test(&mut emu, AccessSize::Word, 0xf216, 0x4d2, 0xed44, 0x5);
         do_sub_test(&mut emu, AccessSize::Word, 0x4582, 0x8000, 0xc582, 0x4);
         do_sub_test(&mut emu, AccessSize::Word, 0x82bc, 0x8000, 0x2bc, 0x1);
+    }
+
+    fn do_rot_test(
+        emu: &mut Emulator,
+        opcode: Opcode,
+        x: u16,
+        sr: u16,
+        expected: u16,
+        expected_sr: u16,
+    ) {
+        println!(
+            "Testing {:?}({:#x}) = {:#x}, SR={:#x}",
+            opcode, x, expected, expected_sr
+        );
+        emu.regs[REG_SR] = sr;
+        emu.regs[15] = x;
+        emu.perform(&Instruction {
+            opcode,
+            operands: {
+                let mut v = ArrayVec::new();
+                v.push(Operand::new_direct_register(15));
+                v
+            },
+            byte_size: 4,
+        });
+        assert_eq!(emu.regs[15], expected);
+        assert_eq!(emu.regs[REG_SR], expected_sr);
+    }
+
+    #[test]
+    fn test_rrc() {
+        let mut emu = Emulator::new();
+        do_rot_test(&mut emu, Opcode::Rrc(AccessSize::Word), 2, 0, 1, 0);
+        do_rot_test(&mut emu, Opcode::Rrc(AccessSize::Word), 1, 0, 0, 1);
+        do_rot_test(&mut emu, Opcode::Rrc(AccessSize::Word), 0, 1, 0x8000, 4);
+        do_rot_test(
+            &mut emu,
+            Opcode::Rrc(AccessSize::Word),
+            0x8000,
+            4,
+            0x4000,
+            0,
+        );
+    }
+
+    #[test]
+    fn test_rra() {
+        let mut emu = Emulator::new();
+        do_rot_test(&mut emu, Opcode::Rra(AccessSize::Word), 2, 0, 1, 0);
+        do_rot_test(&mut emu, Opcode::Rra(AccessSize::Word), 1, 0, 0, 0);
+        do_rot_test(&mut emu, Opcode::Rra(AccessSize::Word), 0, 0, 0, 0);
+        do_rot_test(&mut emu, Opcode::Rra(AccessSize::Word), 0, 1, 0, 1);
+        // zero bit isn't set, but is it cleared? (yes)
+        do_rot_test(&mut emu, Opcode::Rra(AccessSize::Word), 2, 2, 1, 0);
+        do_rot_test(&mut emu, Opcode::Rra(AccessSize::Word), 1, 2, 0, 0);
+        do_rot_test(&mut emu, Opcode::Rra(AccessSize::Word), 0, 2, 0, 0);
     }
 }
