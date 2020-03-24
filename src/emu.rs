@@ -1,6 +1,7 @@
 use super::disasm::{
     self, next_insn, AccessSize, Instruction, Opcode, Operand, RegisterMode, REG_PC, REG_SP, REG_SR,
 };
+use arrayvec::ArrayVec;
 use std::convert::TryInto;
 use std::ops::{Index, IndexMut};
 use std::path::Path;
@@ -162,9 +163,25 @@ impl IndexMut<u16> for Registers {
     }
 }
 
+pub enum EmulatorOpKind {
+    /// A direct read from a register.
+    ReadReg,
+    ReadMem,
+    /// An explicit write to a register. @REG+ doesn't count.
+    WriteReg,
+    WriteMem,
+}
+
+pub struct EmulatorOp {
+    pub kind: EmulatorOpKind,
+    pub addr: u16,
+    pub value: u16,
+}
+
 pub struct Emulator {
     pub regs: Registers,
     pub mem: Memory,
+    pub last_ops: ArrayVec<[EmulatorOp; 4]>,
     /// Used for nicer errors, because pc while performing instruction already points to next
     /// instruction.
     cur_insn_pc: u16,
@@ -176,6 +193,7 @@ impl Emulator {
         Self {
             regs: Registers::new(),
             mem: Memory::new(),
+            last_ops: ArrayVec::new(),
             // Value doesn't matter here
             cur_insn_pc: 0,
         }
@@ -189,6 +207,7 @@ impl Emulator {
         Ok(Self {
             regs,
             mem,
+            last_ops: ArrayVec::new(),
             cur_insn_pc: 0,
         })
     }
@@ -217,11 +236,31 @@ impl Emulator {
                 let value = self.regs[*reg];
 
                 let value = match mode {
-                    RegisterMode::Direct => value,
-                    RegisterMode::Indirect => self
-                        .mem
-                        .get(value, size)
-                        .map_err(|e| self.wrap_mem_error(e))?,
+                    RegisterMode::Direct => {
+                        self.last_ops.push(EmulatorOp {
+                            kind: EmulatorOpKind::ReadReg,
+                            addr: *reg,
+                            value,
+                        });
+
+                        value
+                    }
+
+                    RegisterMode::Indirect => {
+                        let addr = value;
+                        let value = self
+                            .mem
+                            .get(value, size)
+                            .map_err(|e| self.wrap_mem_error(e))?;
+
+                        self.last_ops.push(EmulatorOp {
+                            kind: EmulatorOpKind::ReadMem,
+                            addr,
+                            value,
+                        });
+
+                        value
+                    }
                 };
 
                 if *increment {
@@ -237,15 +276,34 @@ impl Emulator {
             Operand::Indexed { reg, offset } => {
                 let mut addr = self.regs[*reg];
                 addr = addr.wrapping_add(*offset as u16);
-                self.mem.get(addr, size).map_err(|e| self.wrap_mem_error(e))
+                let value = self
+                    .mem
+                    .get(addr, size)
+                    .map_err(|e| self.wrap_mem_error(e))?;
+                self.last_ops.push(EmulatorOp {
+                    kind: EmulatorOpKind::ReadMem,
+                    addr,
+                    value,
+                });
+                Ok(value)
             }
 
             Operand::Immediate(value) => Ok(*value),
 
-            Operand::Absolute(addr) => self
-                .mem
-                .get(*addr, size)
-                .map_err(|e| self.wrap_mem_error(e)),
+            Operand::Absolute(addr) => {
+                let value = self
+                    .mem
+                    .get(*addr, size)
+                    .map_err(|e| self.wrap_mem_error(e))?;
+
+                self.last_ops.push(EmulatorOp {
+                    kind: EmulatorOpKind::ReadMem,
+                    addr: *addr,
+                    value,
+                });
+
+                Ok(value)
+            }
         }
     }
 
@@ -264,14 +322,30 @@ impl Emulator {
                             assert_eq!(value, value & 0xff);
                         }
 
+                        self.last_ops.push(EmulatorOp {
+                            kind: EmulatorOpKind::WriteReg,
+                            addr: *reg,
+                            value,
+                        });
+
                         self.regs[*reg] = value;
                         Ok(())
                     }
 
-                    RegisterMode::Indirect => self
-                        .mem
-                        .set(self.regs[*reg], size, value)
-                        .map_err(|e| self.wrap_mem_error(e)),
+                    RegisterMode::Indirect => {
+                        let addr = self.regs[*reg];
+                        self.mem
+                            .set(addr, size, value)
+                            .map_err(|e| self.wrap_mem_error(e))?;
+
+                        self.last_ops.push(EmulatorOp {
+                            kind: EmulatorOpKind::WriteMem,
+                            addr,
+                            value,
+                        });
+
+                        Ok(())
+                    }
                 }
             }
 
@@ -280,13 +354,30 @@ impl Emulator {
                 addr = addr.wrapping_add(*offset as u16);
                 self.mem
                     .set(addr, size, value)
-                    .map_err(|e| self.wrap_mem_error(e))
+                    .map_err(|e| self.wrap_mem_error(e))?;
+
+                self.last_ops.push(EmulatorOp {
+                    kind: EmulatorOpKind::WriteMem,
+                    addr,
+                    value,
+                });
+
+                Ok(())
             }
 
-            Operand::Absolute(addr) => self
-                .mem
-                .set(*addr, size, value)
-                .map_err(|e| self.wrap_mem_error(e)),
+            Operand::Absolute(addr) => {
+                self.mem
+                    .set(*addr, size, value)
+                    .map_err(|e| self.wrap_mem_error(e))?;
+
+                self.last_ops.push(EmulatorOp {
+                    kind: EmulatorOpKind::WriteMem,
+                    addr: *addr,
+                    value,
+                });
+
+                Ok(())
+            }
 
             Operand::Immediate(_) => unreachable!(),
         }
@@ -310,6 +401,8 @@ impl Emulator {
 
     pub fn perform(&mut self, insn: &Instruction) -> Result<()> {
         use Opcode::*;
+
+        self.last_ops.clear();
 
         match insn.opcode {
             Rrc(size) | Rra(size) => {

@@ -57,6 +57,38 @@ mod pymod {
                 .step()
                 .map_err(|e| Exception::py_err(format!("{:?}", e)))
         }
+
+        fn last_ops(&self) -> PyResult<Vec<PyObject>> {
+            let gil = Python::acquire_gil();
+            let py = gil.python();
+
+            Ok(self
+                .emu
+                .last_ops
+                .iter()
+                .map(|op| {
+                    use emu::EmulatorOpKind::*;
+                    use std::collections::HashMap;
+
+                    let mut hm: HashMap<&str, PyObject> = HashMap::new();
+
+                    hm.insert("type", {
+                        let s = match op.kind {
+                            ReadReg => "read_reg",
+                            WriteReg => "write_reg",
+                            ReadMem => "read_mem",
+                            WriteMem => "write_mem",
+                        };
+                        s.into_py(py)
+                    });
+
+                    hm.insert("addr", op.addr.into_py(py));
+                    hm.insert("value", op.value.into_py(py));
+
+                    hm.into_py(py)
+                })
+                .collect::<Vec<_>>())
+        }
     }
 
     #[pyfunction]
