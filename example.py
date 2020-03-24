@@ -95,6 +95,11 @@ def main():
 
         dev.emu.step()
 
+        # Example: trace all memory writes
+        for op in dev.emu.last_ops():
+            if op["type"] == "write_mem":
+                print(f"Wrote {op['addr']:#x} = {op['value']:#x}")
+
 
 if __name__ == "__main__":
     main()
