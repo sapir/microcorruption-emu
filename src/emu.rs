@@ -8,10 +8,15 @@ use std::path::Path;
 #[derive(Clone, Debug)]
 pub enum Error {
     BadOpcode { pc: u16, word: u16 },
-    UnalignedAccess { addr: u16 },
+    UnalignedAccess { pc: u16, addr: u16 },
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+#[derive(Debug)]
+pub enum MemoryError {
+    UnalignedAccess { addr: u16 },
+}
 
 pub struct Memory {
     pub data: Vec<u8>,
@@ -35,9 +40,9 @@ impl Memory {
         self.data[usize::from(addr)]
     }
 
-    pub fn get_word(&self, addr: u16) -> Result<u16> {
+    pub fn get_word(&self, addr: u16) -> Result<u16, MemoryError> {
         if (addr & 1) != 0 {
-            return Err(Error::UnalignedAccess { addr });
+            return Err(MemoryError::UnalignedAccess { addr });
         }
 
         Ok(u16::from_le_bytes(
@@ -47,7 +52,7 @@ impl Memory {
         ))
     }
 
-    pub fn get(&self, addr: u16, size: AccessSize) -> Result<u16> {
+    pub fn get(&self, addr: u16, size: AccessSize) -> Result<u16, MemoryError> {
         match size {
             AccessSize::Byte => Ok(self.get_byte(addr).into()),
             AccessSize::Word => Ok(self.get_word(addr)?),
@@ -58,9 +63,9 @@ impl Memory {
         self.data[usize::from(addr)] = value;
     }
 
-    pub fn set_word(&mut self, addr: u16, value: u16) -> Result<()> {
+    pub fn set_word(&mut self, addr: u16, value: u16) -> Result<(), MemoryError> {
         if (addr & 1) != 0 {
-            return Err(Error::UnalignedAccess { addr });
+            return Err(MemoryError::UnalignedAccess { addr });
         }
 
         self.data[usize::from(addr)] = (value & 0xff).try_into().unwrap();
@@ -69,7 +74,7 @@ impl Memory {
         Ok(())
     }
 
-    pub fn set(&mut self, addr: u16, size: AccessSize, value: u16) -> Result<()> {
+    pub fn set(&mut self, addr: u16, size: AccessSize, value: u16) -> Result<(), MemoryError> {
         match size {
             AccessSize::Byte => {
                 self.set_byte(addr, (value & 0xff).try_into().unwrap());
@@ -160,6 +165,9 @@ impl IndexMut<u16> for Registers {
 pub struct Emulator {
     pub regs: Registers,
     pub mem: Memory,
+    /// Used for nicer errors, because pc while performing instruction already points to next
+    /// instruction.
+    cur_insn_pc: u16,
 }
 
 impl Emulator {
@@ -168,6 +176,8 @@ impl Emulator {
         Self {
             regs: Registers::new(),
             mem: Memory::new(),
+            // Value doesn't matter here
+            cur_insn_pc: 0,
         }
     }
 
@@ -175,11 +185,26 @@ impl Emulator {
         let mem = Memory::from_dump(path)?;
         let mut regs = Registers::new();
         regs[REG_PC] = mem.get_word(0xfffe).unwrap();
-        Ok(Self { regs, mem })
+        // Value of cur_insn_pc doesn't matter here
+        Ok(Self {
+            regs,
+            mem,
+            cur_insn_pc: 0,
+        })
     }
 
     pub fn pc(&self) -> u16 {
         self.regs.pc()
+    }
+
+    /// Assumes self.cur_insn_pc is set
+    fn wrap_mem_error(&self, err: MemoryError) -> Error {
+        match err {
+            MemoryError::UnalignedAccess { addr } => Error::UnalignedAccess {
+                pc: self.cur_insn_pc,
+                addr,
+            },
+        }
     }
 
     fn read_operand(&mut self, operand: &Operand, size: AccessSize) -> Result<u16> {
@@ -193,7 +218,10 @@ impl Emulator {
 
                 let value = match mode {
                     RegisterMode::Direct => value,
-                    RegisterMode::Indirect => self.mem.get(value, size)?,
+                    RegisterMode::Indirect => self
+                        .mem
+                        .get(value, size)
+                        .map_err(|e| self.wrap_mem_error(e))?,
                 };
 
                 if *increment {
@@ -209,12 +237,15 @@ impl Emulator {
             Operand::Indexed { reg, offset } => {
                 let mut addr = self.regs[*reg];
                 addr = addr.wrapping_add(*offset as u16);
-                self.mem.get(addr, size)
+                self.mem.get(addr, size).map_err(|e| self.wrap_mem_error(e))
             }
 
             Operand::Immediate(value) => Ok(*value),
 
-            Operand::Absolute(addr) => self.mem.get(*addr, size),
+            Operand::Absolute(addr) => self
+                .mem
+                .get(*addr, size)
+                .map_err(|e| self.wrap_mem_error(e)),
         }
     }
 
@@ -237,17 +268,25 @@ impl Emulator {
                         Ok(())
                     }
 
-                    RegisterMode::Indirect => self.mem.set(self.regs[*reg], size, value),
+                    RegisterMode::Indirect => self
+                        .mem
+                        .set(self.regs[*reg], size, value)
+                        .map_err(|e| self.wrap_mem_error(e)),
                 }
             }
 
             Operand::Indexed { reg, offset } => {
                 let mut addr = self.regs[*reg];
                 addr = addr.wrapping_add(*offset as u16);
-                self.mem.set(addr, size, value)
+                self.mem
+                    .set(addr, size, value)
+                    .map_err(|e| self.wrap_mem_error(e))
             }
 
-            Operand::Absolute(addr) => self.mem.set(*addr, size, value),
+            Operand::Absolute(addr) => self
+                .mem
+                .set(*addr, size, value)
+                .map_err(|e| self.wrap_mem_error(e)),
 
             Operand::Immediate(_) => unreachable!(),
         }
@@ -255,11 +294,16 @@ impl Emulator {
 
     fn push(&mut self, value: u16) -> Result<()> {
         self.regs[REG_SP] = self.regs[REG_SP].wrapping_sub(2);
-        self.mem.set_word(self.regs[REG_SP], value)
+        self.mem
+            .set_word(self.regs[REG_SP], value)
+            .map_err(|e| self.wrap_mem_error(e))
     }
 
     fn pop(&mut self) -> Result<u16> {
-        let value = self.mem.get_word(self.regs[REG_SP])?;
+        let value = self
+            .mem
+            .get_word(self.regs[REG_SP])
+            .map_err(|e| self.wrap_mem_error(e))?;
         self.regs[REG_SP] = self.regs[REG_SP].wrapping_add(2);
         Ok(value)
     }
@@ -483,6 +527,7 @@ impl Emulator {
     }
 
     pub fn step(&mut self) -> Result<()> {
+        self.cur_insn_pc = self.pc();
         let insn = self.next_insn()?;
 
         // Set next PC before calling perform(). This way any jumps can override the PC, and
