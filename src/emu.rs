@@ -328,6 +328,14 @@ impl Emulator {
                     _ => unreachable!(),
                 };
 
+                // Try to emulate ctf - ???
+                let mut neg = if value == 0x8000 {
+                    false
+                } else {
+                    self.regs.status_n()
+                };
+                neg |= new_msb;
+
                 value >>= 1;
                 if new_msb {
                     value |= size.msb();
@@ -336,8 +344,9 @@ impl Emulator {
                 self.write_operand(&insn.operands[0], size, value)?;
 
                 self.regs.set_status_bits(size, value, c, false);
-                // zero bit is cleared by ctf :(
-                self.regs[REG_SR] &= !(1 << STATUS_BIT_Z);
+                // zero bit is cleared by ctf. Also overwrite neg with value calculated earlier.
+                self.regs[REG_SR] &= !((1 << STATUS_BIT_Z) | (1 << STATUS_BIT_N));
+                self.regs[REG_SR] |= u16::from(neg) << STATUS_BIT_N;
             }
 
             Swpb => {
@@ -540,6 +549,7 @@ impl Emulator {
     }
 }
 
+/// Many or all of the tests are testing for the ctf's behavior
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -687,29 +697,45 @@ mod tests {
     #[test]
     fn test_rrc() {
         let mut emu = Emulator::new();
-        do_rot_test(&mut emu, Opcode::Rrc(AccessSize::Word), 2, 0, 1, 0);
-        do_rot_test(&mut emu, Opcode::Rrc(AccessSize::Word), 1, 0, 0, 1);
-        do_rot_test(&mut emu, Opcode::Rrc(AccessSize::Word), 0, 1, 0x8000, 4);
-        do_rot_test(
-            &mut emu,
-            Opcode::Rrc(AccessSize::Word),
-            0x8000,
-            4,
-            0x4000,
-            0,
-        );
+        let rrc_w = Opcode::Rrc(AccessSize::Word);
+        do_rot_test(&mut emu, rrc_w, 2, 0, 1, 0);
+        do_rot_test(&mut emu, rrc_w, 1, 0, 0, 1);
+        do_rot_test(&mut emu, rrc_w, 0, 4, 0, 4);
+        do_rot_test(&mut emu, rrc_w, 2, 4, 1, 4);
+        do_rot_test(&mut emu, rrc_w, 1, 4, 0, 5);
+        do_rot_test(&mut emu, rrc_w, 0x100, 0, 0x80, 0);
+        do_rot_test(&mut emu, rrc_w, 0x100, 4, 0x80, 4);
+        do_rot_test(&mut emu, rrc_w, 0x8001, 4, 0x4000, 5);
+        do_rot_test(&mut emu, rrc_w, 0xc9fb, 4, 0x64fd, 5);
+        do_rot_test(&mut emu, rrc_w, 0x8100, 4, 0x4080, 4);
+        do_rot_test(&mut emu, rrc_w, 0x8100, 0, 0x4080, 0);
+        do_rot_test(&mut emu, rrc_w, 0x8000, 4, 0x4000, 0);
+        do_rot_test(&mut emu, rrc_w, 0x8000, 0, 0x4000, 0);
+        do_rot_test(&mut emu, rrc_w, 0, 1, 0x8000, 4);
+        do_rot_test(&mut emu, rrc_w, 0x8000, 1, 0xc000, 4);
+        do_rot_test(&mut emu, rrc_w, 0x8001, 1, 0xc000, 5);
+        do_rot_test(&mut emu, rrc_w, 0x8000, 5, 0xc000, 4);
+        do_rot_test(&mut emu, rrc_w, 0x8001, 5, 0xc000, 5);
+        do_rot_test(&mut emu, rrc_w, 0xc9fb, 5, 0xe4fd, 5);
+        do_rot_test(&mut emu, rrc_w, 0xc9fb, 1, 0xe4fd, 5);
+        do_rot_test(&mut emu, rrc_w, 0xc9fb, 0, 0x64fd, 1);
+        do_rot_test(&mut emu, rrc_w, 0x8400, 0, 0x4200, 0);
+        do_rot_test(&mut emu, rrc_w, 0x8400, 4, 0x4200, 4);
+        do_rot_test(&mut emu, rrc_w, 0xc000, 0, 0x6000, 0);
+        do_rot_test(&mut emu, rrc_w, 0xc000, 4, 0x6000, 4);
     }
 
     #[test]
     fn test_rra() {
         let mut emu = Emulator::new();
-        do_rot_test(&mut emu, Opcode::Rra(AccessSize::Word), 2, 0, 1, 0);
-        do_rot_test(&mut emu, Opcode::Rra(AccessSize::Word), 1, 0, 0, 0);
-        do_rot_test(&mut emu, Opcode::Rra(AccessSize::Word), 0, 0, 0, 0);
-        do_rot_test(&mut emu, Opcode::Rra(AccessSize::Word), 0, 1, 0, 1);
+        let rra_w = Opcode::Rra(AccessSize::Word);
+        do_rot_test(&mut emu, rra_w, 2, 0, 1, 0);
+        do_rot_test(&mut emu, rra_w, 1, 0, 0, 0);
+        do_rot_test(&mut emu, rra_w, 0, 0, 0, 0);
+        do_rot_test(&mut emu, rra_w, 0, 1, 0, 1);
         // zero bit isn't set, but is it cleared? (yes)
-        do_rot_test(&mut emu, Opcode::Rra(AccessSize::Word), 2, 2, 1, 0);
-        do_rot_test(&mut emu, Opcode::Rra(AccessSize::Word), 1, 2, 0, 0);
-        do_rot_test(&mut emu, Opcode::Rra(AccessSize::Word), 0, 2, 0, 0);
+        do_rot_test(&mut emu, rra_w, 2, 2, 1, 0);
+        do_rot_test(&mut emu, rra_w, 1, 2, 0, 0);
+        do_rot_test(&mut emu, rra_w, 0, 2, 0, 0);
     }
 }
