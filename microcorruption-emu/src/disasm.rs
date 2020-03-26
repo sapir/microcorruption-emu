@@ -475,7 +475,7 @@ pub fn disasm(mut addr: u16, buf: &[u8]) -> Result<Vec<Instruction>> {
     let mut insns = vec![];
     loop {
         let insn = next_insn(addr, &mut get_word);
-        if let &Err(Error::Eof) = &insn {
+        if let Err(Error::Eof) = insn {
             if addr == end_addr {
                 break;
             }
