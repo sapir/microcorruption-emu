@@ -1,0 +1,9 @@
+[package]
+name = "microcorruption-gdbserver"
+version = "0.1.0"
+authors = ["sapir <yasapir@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+microcorruption-emu = { path = "../microcorruption-emu" }
+gdbstub = { git = "https://github.com/daniel5151/gdbstub/", features = ["std"] }

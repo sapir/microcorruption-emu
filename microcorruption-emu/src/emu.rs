@@ -163,6 +163,7 @@ impl IndexMut<u16> for Registers {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EmulatorOpKind {
     /// A direct read from a register.
     ReadReg,
@@ -172,6 +173,7 @@ pub enum EmulatorOpKind {
     WriteMem,
 }
 
+#[derive(Clone, Debug)]
 pub struct EmulatorOp {
     pub kind: EmulatorOpKind,
     pub size: AccessSize,

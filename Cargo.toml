@@ -1,5 +1,6 @@
 [workspace]
 members = [
     "microcorruption-emu",
+    "microcorruption-gdbserver",
     "pyucorremu",
 ]

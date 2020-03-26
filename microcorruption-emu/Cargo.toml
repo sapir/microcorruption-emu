@@ -6,4 +6,3 @@ edition = "2018"
 
 [dependencies]
 arrayvec = "0.5.1"
-gdbstub = { git = "https://github.com/daniel5151/gdbstub/", features = ["std"] }

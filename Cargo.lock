@@ -164,7 +164,14 @@ name = "microcorruption-emu"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
+]
+
+[[package]]
+name = "microcorruption-gdbserver"
+version = "0.1.0"
+dependencies = [
  "gdbstub",
+ "microcorruption-emu",
 ]
 
 [[package]]
