@@ -53,6 +53,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gdbstub"
+version = "0.1.0"
+source = "git+https://github.com/daniel5151/gdbstub/#53fdf2fa1db1db208640ec5b70c02f27a9262605"
+dependencies = [
+ "log",
+ "num-traits",
+]
+
+[[package]]
 name = "ghost"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -136,6 +145,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "log"
+version = "0.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14b6052be84e6b71ab17edffc2eeabf5c2c3ae1fdb464aae35ac50c67a44e1f7"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "memchr"
 version = "2.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -146,6 +164,7 @@ name = "microcorruption-emu"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
+ "gdbstub",
 ]
 
 [[package]]
