@@ -77,6 +77,14 @@ impl Emulator {
                     s.into_py(py)
                 });
 
+                hm.insert("size", {
+                    let s = match op.size {
+                        disasm::AccessSize::Byte => "byte",
+                        disasm::AccessSize::Word => "word",
+                    };
+                    s.into_py(py)
+                });
+
                 hm.insert("addr", op.addr.into_py(py));
                 hm.insert("value", op.value.into_py(py));
 

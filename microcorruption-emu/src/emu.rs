@@ -174,6 +174,7 @@ pub enum EmulatorOpKind {
 
 pub struct EmulatorOp {
     pub kind: EmulatorOpKind,
+    pub size: AccessSize,
     pub addr: u16,
     pub value: u16,
 }
@@ -239,6 +240,7 @@ impl Emulator {
                     RegisterMode::Direct => {
                         self.last_ops.push(EmulatorOp {
                             kind: EmulatorOpKind::ReadReg,
+                            size,
                             addr: *reg,
                             value,
                         });
@@ -255,6 +257,7 @@ impl Emulator {
 
                         self.last_ops.push(EmulatorOp {
                             kind: EmulatorOpKind::ReadMem,
+                            size,
                             addr,
                             value,
                         });
@@ -282,6 +285,7 @@ impl Emulator {
                     .map_err(|e| self.wrap_mem_error(e))?;
                 self.last_ops.push(EmulatorOp {
                     kind: EmulatorOpKind::ReadMem,
+                    size,
                     addr,
                     value,
                 });
@@ -298,6 +302,7 @@ impl Emulator {
 
                 self.last_ops.push(EmulatorOp {
                     kind: EmulatorOpKind::ReadMem,
+                    size,
                     addr: *addr,
                     value,
                 });
@@ -324,6 +329,7 @@ impl Emulator {
 
                         self.last_ops.push(EmulatorOp {
                             kind: EmulatorOpKind::WriteReg,
+                            size,
                             addr: *reg,
                             value,
                         });
@@ -340,6 +346,7 @@ impl Emulator {
 
                         self.last_ops.push(EmulatorOp {
                             kind: EmulatorOpKind::WriteMem,
+                            size,
                             addr,
                             value,
                         });
@@ -358,6 +365,7 @@ impl Emulator {
 
                 self.last_ops.push(EmulatorOp {
                     kind: EmulatorOpKind::WriteMem,
+                    size,
                     addr,
                     value,
                 });
@@ -372,6 +380,7 @@ impl Emulator {
 
                 self.last_ops.push(EmulatorOp {
                     kind: EmulatorOpKind::WriteMem,
+                    size,
                     addr: *addr,
                     value,
                 });
