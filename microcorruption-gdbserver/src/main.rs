@@ -6,6 +6,7 @@ use microcorruption_emu::{
     Emulator, Error, REG_SR,
 };
 use std::{convert::TryInto, net::TcpListener, ops::Range};
+use structopt::StructOpt;
 
 pub const CPUOFF: u16 = 0x10;
 
@@ -137,8 +138,17 @@ fn load_dump<P: AsRef<std::path::Path>>(path: P) -> goblin::error::Result<Emulat
     Ok(Emulator::from_initial_memory(mem))
 }
 
+/// Run a gdbserver that emulates the microcorruption CTF device
+#[derive(Debug, StructOpt)]
+struct CliOpts {
+    /// Path to an ELF file or raw memory dump
+    dump: String,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let emu = load_dump("dump.elf")?;
+    let opts = CliOpts::from_args();
+
+    let emu = load_dump(&opts.dump)?;
     let mut emu = GdbEmulator(emu);
 
     let sockaddr = format!("localhost:{}", 9001);
