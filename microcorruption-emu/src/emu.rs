@@ -321,7 +321,16 @@ impl Emulator {
         }
     }
 
-    pub fn write_operand(&mut self, operand: &Operand, size: AccessSize, value: u16) -> Result<()> {
+    pub fn write_operand(
+        &mut self,
+        operand: &Operand,
+        size: AccessSize,
+        mut value: u16,
+    ) -> Result<()> {
+        if size == AccessSize::Byte {
+            value &= 0xff;
+        }
+
         match operand {
             Operand::Register {
                 reg,
