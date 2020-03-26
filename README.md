@@ -1,4 +1,4 @@
-# An MSP430 emulator
+# An MSP430 emulator for microcorruption
 
 This is intended to run the microcorruption CTF (https://microcorruption.com/)
 
