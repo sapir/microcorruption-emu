@@ -464,7 +464,6 @@ where
     }
 }
 
-#[cfg(test)]
 pub fn disasm(mut addr: u16, buf: &[u8]) -> Result<Vec<Instruction>> {
     let mut get_word = move |at: u16| {
         let index = usize::from(at.wrapping_sub(addr));

@@ -1,5 +1,5 @@
 import re
-import msp430emu
+import pyucorremu
 from random import randint
 from enum import Enum
 
@@ -25,7 +25,7 @@ class Reg(Enum):
 
 class CtfDevice:
     def __init__(self, dump_path):
-        self.emu = msp430emu.load(dump_path)
+        self.emu = pyucorremu.load(dump_path)
 
     def get_cur_interrupt_type(self):
         # high byte of SR (mostly) contains interrupt type

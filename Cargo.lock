@@ -142,11 +142,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3728d817d99e5ac407411fa471ff9800a778d88a24685968b36824eaf4bee400"
 
 [[package]]
-name = "msp430emu"
+name = "microcorruption-emu"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
- "pyo3",
 ]
 
 [[package]]
@@ -259,6 +258,14 @@ dependencies = [
  "pyo3-derive-backend",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "pyucorremu"
+version = "0.1.0"
+dependencies = [
+ "microcorruption-emu",
+ "pyo3",
 ]
 
 [[package]]
