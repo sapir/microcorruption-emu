@@ -97,7 +97,7 @@ impl Emulator {
 #[pyfunction]
 fn load(dump_path: &str) -> PyResult<Emulator> {
     Ok(Emulator {
-        emu: emu::Emulator::from_dump(dump_path)?,
+        emu: emu::Emulator::from_dump_file(dump_path)?,
     })
 }
 

@@ -31,10 +31,14 @@ impl Memory {
         }
     }
 
-    pub fn from_dump<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
-        let data = std::fs::read(path)?;
+    pub fn from_buf(data: Vec<u8>) -> Self {
         assert_eq!(data.len(), 0x1_0000);
-        Ok(Self { data })
+        Self { data }
+    }
+
+    pub fn from_dump_file<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+        let data = std::fs::read(path)?;
+        Ok(Self::from_buf(data))
     }
 
     pub fn get_byte(&self, addr: u16) -> u8 {
@@ -202,17 +206,21 @@ impl Emulator {
         }
     }
 
-    pub fn from_dump<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
-        let mem = Memory::from_dump(path)?;
+    pub fn from_initial_memory(mem: Memory) -> Self {
         let mut regs = Registers::new();
         regs[REG_PC] = mem.get_word(0xfffe).unwrap();
         // Value of cur_insn_pc doesn't matter here
-        Ok(Self {
+        Self {
             regs,
             mem,
             last_ops: ArrayVec::new(),
             cur_insn_pc: 0,
-        })
+        }
+    }
+
+    pub fn from_dump_file<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+        let mem = Memory::from_dump_file(path)?;
+        Ok(Self::from_initial_memory(mem))
     }
 
     pub fn pc(&self) -> u16 {

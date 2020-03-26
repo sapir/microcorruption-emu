@@ -99,7 +99,7 @@ impl Target for GdbEmulator {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let emu = Emulator::from_dump("dump.bin")?;
+    let emu = Emulator::from_dump_file("dump.bin")?;
     let mut emu = GdbEmulator(emu);
 
     let sockaddr = format!("localhost:{}", 9001);
