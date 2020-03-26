@@ -1,8 +1,11 @@
 use gdbstub::{Access, AccessKind, GdbStub, Target, TargetState};
-use microcorruption_emu::{disasm::AccessSize, emu::EmulatorOpKind, Emulator, Error, REG_SR};
-use std::convert::TryInto;
-use std::net::TcpListener;
-use std::ops::Range;
+use goblin::elf::Elf;
+use microcorruption_emu::{
+    disasm::AccessSize,
+    emu::{EmulatorOpKind, Memory},
+    Emulator, Error, REG_SR,
+};
+use std::{convert::TryInto, net::TcpListener, ops::Range};
 
 pub const CPUOFF: u16 = 0x10;
 
@@ -98,8 +101,44 @@ impl Target for GdbEmulator {
     }
 }
 
+fn load_dump<P: AsRef<std::path::Path>>(path: P) -> goblin::error::Result<Emulator> {
+    let buf = std::fs::read(path)?;
+    let elf = Elf::parse(&buf);
+
+    if let Err(goblin::error::Error::BadMagic(_)) = elf {
+        if buf.len() == 0x1_0000 {
+            eprintln!(concat!(
+                "Dump file is not a valid ELF, but it's 64KB long,",
+                " assuming it's a raw memory dump"
+            ));
+
+            let mem = Memory::from_buf(buf);
+            let emu = Emulator::from_initial_memory(mem);
+            return Ok(emu);
+        }
+    }
+
+    let elf = elf?;
+
+    // Load program headers
+    let mem = {
+        let mut mem = Memory::new();
+
+        for phdr in &elf.program_headers {
+            assert_eq!(phdr.p_filesz, phdr.p_memsz);
+
+            let segment = &buf[phdr.file_range()];
+            mem.data.copy_from_slice(segment);
+        }
+
+        mem
+    };
+
+    Ok(Emulator::from_initial_memory(mem))
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let emu = Emulator::from_dump_file("dump.bin")?;
+    let emu = load_dump("dump.elf")?;
     let mut emu = GdbEmulator(emu);
 
     let sockaddr = format!("localhost:{}", 9001);

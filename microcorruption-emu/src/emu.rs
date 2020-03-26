@@ -24,7 +24,6 @@ pub struct Memory {
 }
 
 impl Memory {
-    #[cfg(test)]
     pub fn new() -> Self {
         Self {
             data: vec![0; 0x1_0000],
