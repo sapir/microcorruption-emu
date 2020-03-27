@@ -47,7 +47,7 @@ impl Target for GdbEmulator {
 
             if op.size == AccessSize::Word {
                 log_mem_access(Access {
-                    kind: convert_access_kind(op.kind).unwrap(),
+                    kind,
                     addr: addr + 1,
                     val: (value >> 8) as u8,
                 });
