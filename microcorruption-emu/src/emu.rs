@@ -652,6 +652,13 @@ impl Emulator {
     }
 
     pub fn next_insn(&self) -> Result<Instruction> {
+        // The closure passed to next_insn() expects all the addresses to be aligned.
+        // It's enough to just check the beginning of the instruction, because if it's aligned,
+        // then all of the instruction's words will be aligned.
+        if (self.pc() & 1) != 0 {
+            return Err(Error::UnalignedAccess { pc: self.pc(), addr: self.pc() });
+        }
+
         next_insn(self.pc(), |addr| Some(self.mem.get_word(addr).unwrap())).map_err(|e| match e {
             disasm::Error::BadOpcode { word } => Error::BadOpcode {
                 pc: self.pc(),
