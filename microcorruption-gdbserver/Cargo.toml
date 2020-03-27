@@ -7,5 +7,9 @@ edition = "2018"
 [dependencies]
 microcorruption-emu = { path = "../microcorruption-emu" }
 gdbstub = { git = "https://github.com/daniel5151/gdbstub/", features = ["std"] }
-goblin = { version = "0.2.1", features = ["std", "elf32", "endian_fd"] }
 structopt = "0.3.12"
+
+[dependencies.goblin]
+version = "0.2.1"
+default-features = false
+features = ["std", "elf32", "elf64", "endian_fd"]
