@@ -96,6 +96,7 @@ pub const STATUS_BIT_N: u16 = 2;
 // TODO: is this really what microcorruption is using?
 pub const STATUS_BIT_V: u16 = 8;
 
+#[derive(Debug)]
 pub struct Registers {
     regs: [u16; 16],
 }
@@ -243,10 +244,16 @@ impl Emulator {
                 mode,
                 increment,
             } => {
-                let value = self.regs[*reg];
+                let mut value = self.regs[*reg];
 
                 let value = match mode {
                     RegisterMode::Direct => {
+                        // write_operand() also truncates, but this is still required for correct
+                        // status flags and possibly other cases.
+                        if size == AccessSize::Byte {
+                            value &= 0xff;
+                        }
+
                         self.last_ops.push(EmulatorOp {
                             kind: EmulatorOpKind::ReadReg,
                             size,
