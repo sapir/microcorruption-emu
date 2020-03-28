@@ -3,7 +3,7 @@ use goblin::elf::Elf;
 use microcorruption_emu::{
     disasm::AccessSize,
     emu::{EmulatorOpKind, Memory},
-    Emulator, Error, REG_SR,
+    DeviceState, Emulator, FullEmulator,
 };
 use std::{convert::TryInto, net::TcpListener, ops::Range};
 use structopt::StructOpt;
@@ -18,19 +18,41 @@ fn convert_access_kind(op_kind: EmulatorOpKind) -> Option<AccessKind> {
     }
 }
 
-struct GdbEmulator(Emulator);
+fn convert_device_state(device_state: DeviceState) -> TargetState {
+    use DeviceState::*;
 
-impl Target for GdbEmulator {
+    match device_state {
+        Running | WaitingForInput => TargetState::Running,
+        Success | Failure => TargetState::Halted,
+    }
+}
+
+struct GdbEmulator<O>(FullEmulator<O>);
+
+impl<O> Target for GdbEmulator<O>
+where
+    O: FnMut(&str),
+{
     type Usize = u16;
-    type Error = Error;
+    type Error = ();
 
     fn step(
         &mut self,
         mut log_mem_access: impl FnMut(Access<Self::Usize>),
     ) -> Result<TargetState, Self::Error> {
-        self.0.step()?;
+        if self.0.device_state() == DeviceState::WaitingForInput {
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input).unwrap();
 
-        for op in &self.0.last_ops {
+            let input = input.trim_end_matches(|c| c == '\n' || c == '\r');
+
+            let state = self.0.finish_gets(input);
+            return Ok(convert_device_state(state));
+        }
+
+        let state = self.0.step();
+
+        for op in &self.0.emu().last_ops {
             let kind = match convert_access_kind(op.kind) {
                 Some(x) => x,
                 None => continue,
@@ -54,41 +76,35 @@ impl Target for GdbEmulator {
             }
         }
 
-        let state = if (self.0.regs[REG_SR] & CPUOFF) != 0 {
-            TargetState::Halted
-        } else {
-            TargetState::Running
-        };
-
-        Ok(state)
+        Ok(convert_device_state(state))
     }
 
     fn read_registers(&mut self, mut push_reg: impl FnMut(&[u8])) {
         for reg in 0..16 {
-            push_reg(&self.0.regs[reg].to_le_bytes());
+            push_reg(&self.0.emu().regs[reg].to_le_bytes());
         }
     }
 
     fn write_registers(&mut self, regs: &[u8]) {
         for (i, value) in regs.chunks_exact(2).enumerate() {
             let value = u16::from_le_bytes(value.try_into().unwrap());
-            self.0.regs[i.try_into().unwrap()] = value;
+            self.0.emu_mut().regs[i.try_into().unwrap()] = value;
         }
     }
 
     fn read_pc(&mut self) -> Self::Usize {
-        self.0.pc()
+        self.0.emu().pc()
     }
 
     fn read_addrs(&mut self, addr: Range<Self::Usize>, mut val: impl FnMut(u8)) {
         for addr0 in addr {
-            val(self.0.mem.get_byte(addr0))
+            val(self.0.emu().mem.get_byte(addr0))
         }
     }
 
     fn write_addrs(&mut self, mut get_addr_val: impl FnMut() -> Option<(Self::Usize, u8)>) {
         while let Some((addr, val)) = get_addr_val() {
-            self.0.mem.set_byte(addr, val);
+            self.0.emu_mut().mem.set_byte(addr, val);
         }
     }
 
@@ -143,33 +159,35 @@ fn load_dump<P: AsRef<std::path::Path>>(path: P) -> goblin::error::Result<Emulat
 struct CliOpts {
     /// Path to an ELF file or raw memory dump
     dump: String,
+
+    /// Set this for level 19 so that int 0x10 arguments are popped properly
+    #[structopt(long = "level-19")]
+    level_19: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts = CliOpts::from_args();
 
+    let output_callback = |out: &str| print!("{}", out);
+
     let emu = load_dump(&opts.dump)?;
+    let emu = FullEmulator::new(emu, opts.level_19, output_callback);
     let mut emu = GdbEmulator(emu);
 
     let sockaddr = format!("localhost:{}", 9001);
-    eprintln!("Waiting for a GDB connection on {:?}...", sockaddr);
+    eprintln!("[Waiting for a GDB connection on {:?}...]", sockaddr);
     let sock = TcpListener::bind(sockaddr)?;
     let (stream, addr) = sock.accept()?;
-    eprintln!("Debugger connected from {}", addr);
+    eprintln!("[Debugger connected from {}]", addr);
 
     // Hand the connection off to the GdbStub.
     let mut debugger = GdbStub::new(stream);
 
-    let system_result = match debugger.run(&mut emu) {
+    match debugger.run(&mut emu) {
         Ok(state) => {
             eprintln!("Disconnected from GDB. Target state: {:?}", state);
             Ok(())
         }
-        Err(gdbstub::Error::TargetError(e)) => Err(e),
-        Err(e) => return Err(e.into()),
-    };
-
-    eprintln!("{:?}", system_result);
-
-    Ok(())
+        Err(e) => Err(e.into()),
+    }
 }
