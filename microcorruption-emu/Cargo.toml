@@ -6,3 +6,5 @@ edition = "2018"
 
 [dependencies]
 microcorruption-emu-core = { path = "../microcorruption-emu-core" }
+rand = "0.7.3"
+hex = "0.4.2"
