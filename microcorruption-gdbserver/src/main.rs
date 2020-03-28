@@ -47,7 +47,12 @@ where
             let input = input.trim_end_matches(|c| c == '\n' || c == '\r');
 
             let state = self.0.finish_gets(input);
-            return Ok(convert_device_state(state));
+            // Auto-breakpoint after input
+            if state == DeviceState::Running {
+                return Ok(TargetState::SoftwareBreakpoint);
+            } else {
+                return Ok(convert_device_state(state));
+            }
         }
 
         let state = self.0.step();
