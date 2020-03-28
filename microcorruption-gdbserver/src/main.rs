@@ -27,12 +27,9 @@ fn convert_device_state(device_state: DeviceState) -> TargetState {
     }
 }
 
-struct GdbEmulator<O>(FullEmulator<O>);
+struct GdbEmulator(FullEmulator);
 
-impl<O> Target for GdbEmulator<O>
-where
-    O: FnMut(&str),
-{
+impl Target for GdbEmulator {
     type Usize = u16;
     type Error = ();
 
@@ -40,13 +37,15 @@ where
         &mut self,
         mut log_mem_access: impl FnMut(Access<Self::Usize>),
     ) -> Result<TargetState, Self::Error> {
+        let output_callback = |out: &str| print!("{}", out);
+
         if self.0.device_state() == DeviceState::WaitingForInput {
             let mut input = String::new();
             std::io::stdin().read_line(&mut input).unwrap();
 
             let input = input.trim_end_matches(|c| c == '\n' || c == '\r');
 
-            let state = self.0.finish_gets(input);
+            let state = self.0.finish_gets(input, output_callback);
             // Auto-breakpoint after input
             if state == DeviceState::Running {
                 return Ok(TargetState::SoftwareBreakpoint);
@@ -55,7 +54,7 @@ where
             }
         }
 
-        let state = self.0.step();
+        let state = self.0.step(output_callback);
 
         for op in &self.0.emu().last_ops {
             let kind = match convert_access_kind(op.kind) {
@@ -173,10 +172,8 @@ struct CliOpts {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts = CliOpts::from_args();
 
-    let output_callback = |out: &str| print!("{}", out);
-
     let emu = load_dump(&opts.dump)?;
-    let emu = FullEmulator::new(emu, opts.level_19, output_callback);
+    let emu = FullEmulator::new(emu, opts.level_19);
     let mut emu = GdbEmulator(emu);
 
     let sockaddr = format!("localhost:{}", 9001);

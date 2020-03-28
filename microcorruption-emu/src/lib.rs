@@ -96,25 +96,20 @@ impl DepState {
 }
 
 /// Emulator with handling of int 0x10 and success/failure tracking.
-pub struct FullEmulator<OutputCallback> {
+pub struct FullEmulator {
     device_state: DeviceState,
     emu: Emulator,
     pop_int_0x10_args: bool,
     dep_state: DepState,
-    output_callback: OutputCallback,
 }
 
-impl<OutputCallback> FullEmulator<OutputCallback>
-where
-    OutputCallback: FnMut(&str),
-{
-    pub fn new(emu: Emulator, pop_int_0x10_args: bool, output_callback: OutputCallback) -> Self {
+impl FullEmulator {
+    pub fn new(emu: Emulator, pop_int_0x10_args: bool) -> Self {
         Self {
             device_state: DeviceState::Running,
             emu,
             pop_int_0x10_args,
             dep_state: DepState::new(),
-            output_callback: output_callback,
         }
     }
 
@@ -148,13 +143,20 @@ where
             .map_err(fail_device)
     }
 
-    fn handle_int_0x10(&mut self, int_type: InterruptType) -> Result<(), DeviceState> {
+    fn handle_int_0x10<F>(
+        &mut self,
+        int_type: InterruptType,
+        mut output_callback: F,
+    ) -> Result<(), DeviceState>
+    where
+        F: FnMut(&str),
+    {
         match int_type {
             InterruptType::Putchar => {
                 let b = self.get_interrupt_arg(0)? as u8;
                 if b == b'\n' || b == b' ' || b.is_ascii_graphic() {
                     // We just checked that it's valid utf-8
-                    (self.output_callback)(std::str::from_utf8(&[b]).unwrap());
+                    output_callback(std::str::from_utf8(&[b]).unwrap());
                 }
 
                 self.ret_from_int_0x10(1)?;
@@ -233,7 +235,10 @@ where
         Ok(())
     }
 
-    fn parse_input(&mut self, input: &str) -> Result<Vec<u8>, DeviceState> {
+    fn parse_input<F>(&mut self, input: &str, mut output_callback: F) -> Result<Vec<u8>, DeviceState>
+    where
+        F: FnMut(&str),
+    {
         if input.starts_with("0x") {
             // Skip 0x prefix, remove any spaces
             let input = input[2..].replace(" ", "");
@@ -242,7 +247,7 @@ where
                 Ok(buf) => Ok(buf),
 
                 Err(_) => {
-                    (self.output_callback)("\n(please input hex bytes as 0x1234...)\n");
+                    output_callback("\n(please input hex bytes as 0x1234...)\n");
                     return Err(DeviceState::WaitingForInput);
                 }
             }
@@ -251,11 +256,18 @@ where
         }
     }
 
-    fn do_finish_gets(&mut self, input: &str) -> Result<DeviceState, DeviceState> {
+    fn do_finish_gets<F>(
+        &mut self,
+        input: &str,
+        output_callback: F,
+    ) -> Result<DeviceState, DeviceState>
+    where
+        F: FnMut(&str),
+    {
         let ptr = self.get_interrupt_arg(0).map_err(fail_device)?;
         let maxlen = self.get_interrupt_arg(1).map_err(fail_device)?;
 
-        let input = self.parse_input(input)?;
+        let input = self.parse_input(input, output_callback)?;
 
         for (i, b) in input
             .iter()
@@ -273,12 +285,20 @@ where
 
     /// See step() for what to do with the return value.
     #[must_use]
-    pub fn finish_gets(&mut self, input: &str) -> DeviceState {
-        self.device_state = self.do_finish_gets(input).unwrap_or_else(|e| e);
+    pub fn finish_gets<F>(&mut self, input: &str, output_callback: F) -> DeviceState
+    where
+        F: FnMut(&str),
+    {
+        self.device_state = self
+            .do_finish_gets(input, output_callback)
+            .unwrap_or_else(|e| e);
         self.device_state
     }
 
-    fn do_step(&mut self) -> Result<DeviceState, DeviceState> {
+    fn do_step<F>(&mut self, output_callback: F) -> Result<DeviceState, DeviceState>
+    where
+        F: FnMut(&str),
+    {
         assert_eq!(self.device_state, DeviceState::Running);
 
         if self.emu.pc() == 0x10 {
@@ -286,7 +306,7 @@ where
                 Some(InterruptType::Gets) => return Ok(DeviceState::WaitingForInput),
 
                 Some(int_type) => {
-                    self.handle_int_0x10(int_type)?;
+                    self.handle_int_0x10(int_type, output_callback)?;
                     return Ok(DeviceState::Running);
                 }
 
@@ -313,8 +333,11 @@ where
     ///
     /// The return value can also be accessed as device_state().
     #[must_use]
-    pub fn step(&mut self) -> DeviceState {
-        self.device_state = self.do_step().unwrap_or_else(|e| e);
+    pub fn step<F>(&mut self, output_callback: F) -> DeviceState
+    where
+        F: FnMut(&str),
+    {
+        self.device_state = self.do_step(output_callback).unwrap_or_else(|e| e);
         self.device_state
     }
 }
