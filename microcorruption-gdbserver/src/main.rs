@@ -180,6 +180,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (stream, addr) = sock.accept()?;
     eprintln!("[Debugger connected from {}]", addr);
 
+    eprintln!("[Starting device emulation]");
+    eprintln!("[When asked for input, you can also use 0xabcd... to specify arbitrary hex bytes]");
+
     // Hand the connection off to the GdbStub.
     let mut debugger = GdbStub::new(stream);
 
