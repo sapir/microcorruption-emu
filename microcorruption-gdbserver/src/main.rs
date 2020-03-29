@@ -27,7 +27,10 @@ fn convert_device_state(device_state: DeviceState) -> TargetState {
     }
 }
 
-struct GdbEmulator(FullEmulator);
+struct GdbEmulator {
+    emu: FullEmulator,
+    auto_break: bool,
+}
 
 impl Target for GdbEmulator {
     type Usize = u16;
@@ -39,24 +42,24 @@ impl Target for GdbEmulator {
     ) -> Result<TargetState, Self::Error> {
         let output_callback = |out: &str| print!("{}", out);
 
-        if self.0.device_state() == DeviceState::WaitingForInput {
+        if self.emu.device_state() == DeviceState::WaitingForInput {
             let mut input = String::new();
             std::io::stdin().read_line(&mut input).unwrap();
 
             let input = input.trim_end_matches(|c| c == '\n' || c == '\r');
 
-            let state = self.0.finish_gets(input, output_callback);
+            let state = self.emu.finish_gets(input, output_callback);
             // Auto-breakpoint after input
-            if state == DeviceState::Running {
+            if state == DeviceState::Running && self.auto_break {
                 return Ok(TargetState::SoftwareBreakpoint);
             } else {
                 return Ok(convert_device_state(state));
             }
         }
 
-        let state = self.0.step(output_callback);
+        let state = self.emu.step(output_callback);
 
-        for op in &self.0.emu().last_ops {
+        for op in &self.emu.emu().last_ops {
             let kind = match convert_access_kind(op.kind) {
                 Some(x) => x,
                 None => continue,
@@ -85,30 +88,30 @@ impl Target for GdbEmulator {
 
     fn read_registers(&mut self, mut push_reg: impl FnMut(&[u8])) {
         for reg in 0..16 {
-            push_reg(&self.0.emu().regs[reg].to_le_bytes());
+            push_reg(&self.emu.emu().regs[reg].to_le_bytes());
         }
     }
 
     fn write_registers(&mut self, regs: &[u8]) {
         for (i, value) in regs.chunks_exact(2).enumerate() {
             let value = u16::from_le_bytes(value.try_into().unwrap());
-            self.0.emu_mut().regs[i.try_into().unwrap()] = value;
+            self.emu.emu_mut().regs[i.try_into().unwrap()] = value;
         }
     }
 
     fn read_pc(&mut self) -> Self::Usize {
-        self.0.emu().pc()
+        self.emu.emu().pc()
     }
 
     fn read_addrs(&mut self, addr: Range<Self::Usize>, mut val: impl FnMut(u8)) {
         for addr0 in addr {
-            val(self.0.emu().mem.get_byte(addr0))
+            val(self.emu.emu().mem.get_byte(addr0))
         }
     }
 
     fn write_addrs(&mut self, mut get_addr_val: impl FnMut() -> Option<(Self::Usize, u8)>) {
         while let Some((addr, val)) = get_addr_val() {
-            self.0.emu_mut().mem.set_byte(addr, val);
+            self.emu.emu_mut().mem.set_byte(addr, val);
         }
     }
 
@@ -165,8 +168,12 @@ struct CliOpts {
     dump: String,
 
     /// Set this for level 19 so that int 0x10 arguments are popped properly
-    #[structopt(long = "level-19")]
+    #[structopt(long)]
     level_19: bool,
+
+    /// Disable automatic insertion of breakpoints after each input
+    #[structopt(long)]
+    no_auto_break: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -174,7 +181,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let emu = load_dump(&opts.dump)?;
     let emu = FullEmulator::new(emu, opts.level_19);
-    let mut emu = GdbEmulator(emu);
+    let mut emu = GdbEmulator {
+        emu,
+        auto_break: !opts.no_auto_break,
+    };
 
     let sockaddr = format!("localhost:{}", 9001);
     eprintln!("[Waiting for a GDB connection on {:?}...]", sockaddr);
