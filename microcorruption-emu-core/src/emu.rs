@@ -656,7 +656,10 @@ impl Emulator {
         // It's enough to just check the beginning of the instruction, because if it's aligned,
         // then all of the instruction's words will be aligned.
         if (self.pc() & 1) != 0 {
-            return Err(Error::UnalignedAccess { pc: self.pc(), addr: self.pc() });
+            return Err(Error::UnalignedAccess {
+                pc: self.pc(),
+                addr: self.pc(),
+            });
         }
 
         next_insn(self.pc(), |addr| Some(self.mem.get_word(addr).unwrap())).map_err(|e| match e {

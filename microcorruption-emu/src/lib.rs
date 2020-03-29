@@ -235,7 +235,11 @@ impl FullEmulator {
         Ok(())
     }
 
-    fn parse_input<F>(&mut self, input: &str, mut output_callback: F) -> Result<Vec<u8>, DeviceState>
+    fn parse_input<F>(
+        &mut self,
+        input: &str,
+        mut output_callback: F,
+    ) -> Result<Vec<u8>, DeviceState>
     where
         F: FnMut(&str),
     {
