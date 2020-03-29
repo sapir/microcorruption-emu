@@ -89,8 +89,9 @@ dependencies = [
 
 [[package]]
 name = "gdbstub"
-version = "0.1.0"
-source = "git+https://github.com/daniel5151/gdbstub/#e600eb098a0a93931d531e16b06138e0feaecdcb"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3840e5ebc71d05208480d813a2438422466e53defce5adf0d57f5c2dda3a14a"
 dependencies = [
  "log",
  "num-traits",
