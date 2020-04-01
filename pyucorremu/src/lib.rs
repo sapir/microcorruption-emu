@@ -108,9 +108,27 @@ fn load_dump_file(dump_path: &str) -> PyResult<Emulator> {
     }
 }
 
+fn disasm_err_to_py(err: disasm::Error) -> PyErr {
+    use disasm::Error::*;
+
+    match err {
+        Eof => ValueError::py_err("EOF during disassembly - Buffer contains truncated instruction"),
+
+        BadOpcode { word } => ValueError::py_err(format!("Bad instruction word {:#06x}", word)),
+    }
+}
+
+#[pyfunction]
+fn disasm(addr: u16, buf: &[u8]) -> PyResult<Vec<String>> {
+    let insns = disasm::disasm(addr, buf).map_err(disasm_err_to_py)?;
+
+    Ok(insns.into_iter().map(|insn| insn.to_string()).collect())
+}
+
 #[pymodule]
 fn pyucorremu(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<Emulator>()?;
     m.add_wrapped(wrap_pyfunction!(load_dump_file))?;
+    m.add_wrapped(wrap_pyfunction!(disasm))?;
     Ok(())
 }
