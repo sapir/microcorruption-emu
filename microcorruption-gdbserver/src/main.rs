@@ -136,7 +136,7 @@ fn load_dump<P: AsRef<std::path::Path>>(path: P) -> goblin::error::Result<Emulat
                 " assuming it's a raw memory dump"
             ));
 
-            let mem = Memory::from_buf(buf);
+            let mem = Memory::from_buf(buf).unwrap();
             let emu = Emulator::from_initial_memory(mem);
             return Ok(emu);
         }

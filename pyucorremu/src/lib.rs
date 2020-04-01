@@ -95,15 +95,22 @@ impl Emulator {
 }
 
 #[pyfunction]
-fn load(dump_path: &str) -> PyResult<Emulator> {
-    Ok(Emulator {
-        emu: emu::Emulator::from_dump_file(dump_path)?,
-    })
+fn load_dump_file(dump_path: &str) -> PyResult<Emulator> {
+    match emu::Emulator::from_dump_file(dump_path) {
+        Ok(emu) => Ok(Emulator { emu }),
+
+        Err(LoadError::BadDumpLength(size)) => Err(ValueError::py_err(format!(
+            "Bad memory dump length {}, must be 65536",
+            size
+        ))),
+
+        Err(LoadError::IO(e)) => Err(e.into()),
+    }
 }
 
 #[pymodule]
 fn pyucorremu(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<Emulator>()?;
-    m.add_wrapped(wrap_pyfunction!(load))?;
+    m.add_wrapped(wrap_pyfunction!(load_dump_file))?;
     Ok(())
 }

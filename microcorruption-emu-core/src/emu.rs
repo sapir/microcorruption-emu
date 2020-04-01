@@ -15,6 +15,12 @@ pub enum Error {
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Debug)]
+pub enum LoadError {
+    BadDumpLength(usize),
+    IO(std::io::Error),
+}
+
+#[derive(Debug)]
 pub enum MemoryError {
     UnalignedAccess { addr: u16 },
 }
@@ -30,14 +36,17 @@ impl Memory {
         }
     }
 
-    pub fn from_buf(data: Vec<u8>) -> Self {
-        assert_eq!(data.len(), 0x1_0000);
-        Self { data }
+    pub fn from_buf(data: Vec<u8>) -> Result<Self, LoadError> {
+        if data.len() != 0x1_0000 {
+            return Err(LoadError::BadDumpLength(data.len()));
+        }
+
+        Ok(Self { data })
     }
 
-    pub fn from_dump_file<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
-        let data = std::fs::read(path)?;
-        Ok(Self::from_buf(data))
+    pub fn from_dump_file<P: AsRef<Path>>(path: P) -> Result<Self, LoadError> {
+        let data = std::fs::read(path).map_err(LoadError::IO)?;
+        Self::from_buf(data)
     }
 
     pub fn get_byte(&self, addr: u16) -> u8 {
@@ -218,7 +227,7 @@ impl Emulator {
         }
     }
 
-    pub fn from_dump_file<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+    pub fn from_dump_file<P: AsRef<Path>>(path: P) -> Result<Self, LoadError> {
         let mem = Memory::from_dump_file(path)?;
         Ok(Self::from_initial_memory(mem))
     }

@@ -25,7 +25,7 @@ class Reg(Enum):
 
 class CtfDevice:
     def __init__(self, dump_path):
-        self.emu = pyucorremu.load(dump_path)
+        self.emu = pyucorremu.load_dump_file(dump_path)
 
     def get_cur_interrupt_type(self):
         # high byte of SR (mostly) contains interrupt type
