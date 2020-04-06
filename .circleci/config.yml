@@ -10,10 +10,11 @@ jobs:
       - restore_cache:
           key: project-cache
       - run:
-          name: Install python-dev
+          name: Install python dev dependencies
           command: |
             apt-get update
-            apt-get install -y python3-dev python-dev
+            apt-get install -y python3-dev python-dev python3-pip
+            pip3 install maturin
 # Currently no rustfmt on nightly
 #   - run:
 #       name: Check formatting
@@ -21,22 +22,23 @@ jobs:
 #         rustfmt --version
 #         cargo fmt -- --check
       - run:
-          name: Test
+          # cargo test fails for pyucorremu with a linker error
+          name: Test (except pyucorremu)
           command: rustup run nightly cargo test --workspace --exclude pyucorremu
       - run:
-          name: Nightly Build
+          name: Nightly Build - gdbserver
           command: |
             rustup run nightly rustc --version --verbose
             rustup run nightly cargo --version --verbose
-            rustup run nightly cargo build --release
-      - run:
-          name: Rename python module
-          command: |
-            cp target/release/libpyucorremu.so pyucorremu.so
+            rustup run nightly cargo build --release -p microcorruption-gdbserver
       - store_artifacts:
           path: ./target/release/microcorruption-gdbserver
+      - run:
+          name: Nightly Build - pyucorremu
+          command: |
+            rustup run nightly maturin build -m pyucorremu/Cargo.toml --release
       - store_artifacts:
-          path: ./pyucorremu.so
+          path: ./target/wheels
       # The publish job's docker image is missing libraries needed to run the gdbserver to get the
       # version string. So run it now instead.
       - run:
@@ -48,9 +50,12 @@ jobs:
           paths:
             - microcorruption-gdbserver
       - persist_to_workspace:
+          root: target/wheels
+          paths:
+            - "*.whl"
+      - persist_to_workspace:
           root: .
           paths:
-            - pyucorremu.so
             - version.txt
       - save_cache:
           key: project-cache
