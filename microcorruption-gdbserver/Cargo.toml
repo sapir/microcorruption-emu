@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 microcorruption-emu = { path = "../microcorruption-emu" }
-gdbstub = { version = "0.1.1", features = ["std"] }
+gdbstub = { version = "0.1.2", features = ["std"] }
 structopt = "0.3.12"
 
 [dependencies.goblin]
