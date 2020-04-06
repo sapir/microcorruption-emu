@@ -1,0 +1,95 @@
+version: 2
+
+jobs:
+  test-and-build:
+    docker:
+      - image: rustlang/rust:nightly
+
+    steps:
+      - checkout
+      - restore_cache:
+          key: project-cache
+      - run:
+          name: Install python-dev
+          command: |
+            apt-get update
+            apt-get install -y python3-dev python-dev
+# Currently no rustfmt on nightly
+#   - run:
+#       name: Check formatting
+#       command: |
+#         rustfmt --version
+#         cargo fmt -- --check
+      - run:
+          name: Test
+          command: rustup run nightly cargo test --workspace --exclude pyucorremu
+      - run:
+          name: Nightly Build
+          command: |
+            rustup run nightly rustc --version --verbose
+            rustup run nightly cargo --version --verbose
+            rustup run nightly cargo build --release
+      - run:
+          name: Rename python module
+          command: |
+            cp target/release/libpyucorremu.so pyucorremu.so
+      - store_artifacts:
+          path: ./target/release/microcorruption-gdbserver
+      - store_artifacts:
+          path: ./pyucorremu.so
+      # The publish job's docker image is missing libraries needed to run the gdbserver to get the
+      # version string. So run it now instead.
+      - run:
+          name: Query version
+          command: |
+            target/release/microcorruption-gdbserver --version | awk '{print "v"$2}' > version.txt
+      - persist_to_workspace:
+          root: target/release
+          paths:
+            - microcorruption-gdbserver
+      - persist_to_workspace:
+          root: .
+          paths:
+            - pyucorremu.so
+            - version.txt
+      - save_cache:
+          key: project-cache
+          paths:
+            - "~/.cargo"
+            - "./target"
+
+  publish-github-release:
+    docker:
+      - image: cibuilds/github:0.10
+    steps:
+      - attach_workspace:
+          at: ./artifacts
+      - run:
+          name: "Publish Release on GitHub"
+          command: |
+            VERSION=$(cat artifacts/version.txt)
+            rm artifacts/version.txt
+            ghr -t "${GITHUB_TOKEN}" -u "${CIRCLE_PROJECT_USERNAME}" -r "${CIRCLE_PROJECT_REPONAME}" -c "${CIRCLE_SHA1}" -replace "${VERSION}" ./artifacts/
+
+workflows:
+  version: 2
+
+  workflow:
+    jobs:
+      - test-and-build:
+          # All branches, and all tags beginning with 'v\d'
+          filters:
+            tags:
+              only: /^v\d.*/
+
+      - publish-github-release:
+          # Only for tags beginning with 'v\d'
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v\d.*/
+
+          requires:
+            - test-and-build
+          context: github
